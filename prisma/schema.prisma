@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id @default(uuid())
+  fullName      String
+  email         String    @unique
+  phone         String    @unique
+  password      String
+  isAdmin       Boolean   @default(false) @map("is_admin")
+  tokenVersion  Int       @default(0) @map("token_version")
+  driverProfile Driver?
+  bookings      Booking[]
+  createdAt     DateTime  @default(now())
+}
+
+model Driver {
+  id            String    @id @default(uuid())
+  userId        String?   @unique @map("user_id")
+  name          String
+  email         String    @unique
+  phone         String    @unique
+  password      String
+  photoUrl      String?
+  isAvailable   Boolean   @default(true)
+  isActive      Boolean   @default(true)
+  tokenVersion  Int       @default(0) @map("token_version")
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  car           Car?
+  bookings      Booking[]
+}
+
+model Car {
+  id        String @id @default(uuid())
+  driverId  String @unique
+  carName   String
+  carNumber String @unique
+  capacity  Int
+  driver    Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+}
+
+model Booking {
+  id              String   @id @default(uuid())
+  uuid            String   @unique @default(uuid())
+  userId          String
+  driverId        String?
+  customerName    String?  @map("customer_name")
+  customerEmail   String?  @map("customer_email")
+  customerPhone   String?  @map("customer_phone")
+  flightNumber    String?  @map("flight_number")
+  returnTime      DateTime? @map("return_time")
+  pickupLocation  Json
+  dropoffLocation Json
+  scheduledTime   DateTime
+  price           Float
+  status          String
+  luggageCount    Int
+  passengerCount  Int
+  note            String?
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  driver          Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+}

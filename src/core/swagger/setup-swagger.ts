@@ -12,8 +12,21 @@ export function setupSwagger(app: INestApplication): void {
     .setTitle('Taxi Booking API')
     .setDescription('HTTP API for the taxi booking backend')
     .setVersion('1.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        bearerFormat: 'JWT',
+        description:
+          'Click Authorize, then paste only the access_token from POST /auth/signin or /auth/signup (Swagger adds the Bearer prefix; do not paste Bearer yourself).',
+      },
+      'access-token',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup(SWAGGER_PATH, app, document);
+  SwaggerModule.setup(SWAGGER_PATH, app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+  });
 }
