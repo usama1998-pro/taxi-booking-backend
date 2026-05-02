@@ -1,0 +1,98 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { InvoiceAddressKind } from '@prisma/client';
+import { Type } from 'class-transformer';
+import {
+  IsDateString,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
+
+export class CreateDriverInvoiceDto {
+  @ApiProperty({ example: 'Jane Passenger' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  fullName!: string;
+
+  @ApiProperty({ example: '+44 7700 900000' })
+  @IsString()
+  @MinLength(5)
+  @MaxLength(40)
+  phoneNumber!: string;
+
+  @ApiProperty({ description: 'Customer-facing booking reference text' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  bookingReference!: string;
+
+  @ApiProperty({ description: 'ISO 8601 date-time for pickup' })
+  @IsDateString()
+  pickupDate!: string;
+
+  @ApiProperty({ enum: InvoiceAddressKind })
+  @IsEnum(InvoiceAddressKind)
+  pickupKind!: InvoiceAddressKind;
+
+  @ApiPropertyOptional({ description: 'Required when pickupKind is LOCATION' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  pickupAddress?: string;
+
+  @ApiPropertyOptional({
+    description: 'When pickupKind is AIRPORT: optional airline name or code.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  pickupAirline?: string;
+
+  @ApiPropertyOptional({
+    description: 'When pickupKind is AIRPORT: required flight number.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  pickupFlightNo?: string;
+
+  @ApiProperty({ enum: InvoiceAddressKind })
+  @IsEnum(InvoiceAddressKind)
+  dropoffKind!: InvoiceAddressKind;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  dropoffAddress?: string;
+
+  @ApiPropertyOptional({
+    description: 'When dropoffKind is AIRPORT: optional airline name or code.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  dropoffAirline?: string;
+
+  @ApiPropertyOptional({
+    description: 'When dropoffKind is AIRPORT: required flight number.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  dropoffFlightNo?: string;
+
+  @ApiProperty({
+    description: 'Subtotal before tax (GBP). Server applies 10% tax.',
+    example: 45.0,
+  })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  priceAmount!: number;
+}

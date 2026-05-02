@@ -5,13 +5,16 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { hashPassword } from '../../common/utils/password.util';
 import { PrismaService } from '../../core/database/prisma.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { CreateBookingDto } from './dto/create-booking.dto';
-import { ListBookingsQueryDto } from './dto/list-bookings-query.dto';
+import {
+  BookingTimeScope,
+  ListBookingsQueryDto,
+} from './dto/list-bookings-query.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
 
 const bookingInclude = {
@@ -59,6 +62,34 @@ export type BookingCreateResult = BookingPublic & {
 @Injectable()
 export class BookingsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async allocateBookingReference(
+    tx: Prisma.TransactionClient,
+    requested?: string | null,
+  ): Promise<string> {
+    const trimmed = requested?.trim();
+    if (trimmed) {
+      const taken = await tx.booking.findFirst({
+        where: { bookingReference: trimmed },
+        select: { id: true },
+      });
+      if (taken) {
+        throw new BadRequestException('That booking reference is already in use');
+      }
+      return trimmed;
+    }
+    for (let i = 0; i < 24; i++) {
+      const candidate = `BK-${randomBytes(4).toString('hex').toUpperCase()}`;
+      const taken = await tx.booking.findFirst({
+        where: { bookingReference: candidate },
+        select: { id: true },
+      });
+      if (!taken) {
+        return candidate;
+      }
+    }
+    throw new InternalServerErrorException('Could not allocate booking reference');
+  }
 
   private async resolveOrCreatePublicBookingUserId(
     dto: CreateBookingDto,
@@ -240,10 +271,16 @@ export class BookingsService {
           }
         }
 
+        const bookingReference = await this.allocateBookingReference(
+          tx,
+          dto.bookingReference,
+        );
+
         const createdBooking = await tx.booking.create({
           data: {
             userId,
             driverId: assignedDriver?.id,
+            bookingReference,
             customerName: dto.customerName,
             customerEmail: dto.customerEmail,
             customerPhone: dto.customerPhone,
@@ -295,11 +332,51 @@ export class BookingsService {
     requester: AuthenticatedUser,
     query: ListBookingsQueryDto,
   ): Promise<PaginatedBookings> {
-    const where: Prisma.BookingWhereInput = requester.is_admin
+    const baseWhere: Prisma.BookingWhereInput = requester.is_admin
       ? {}
       : requester.typ === 'user'
         ? { userId: requester.sub }
         : { driverId: requester.sub };
+
+    const terminalOr: Prisma.BookingWhereInput = {
+      OR: [
+        { status: { equals: 'completed', mode: 'insensitive' } },
+        { status: { equals: 'cancelled', mode: 'insensitive' } },
+        { status: { equals: 'canceled', mode: 'insensitive' } },
+      ],
+    };
+
+    const notTerminal: Prisma.BookingWhereInput = { NOT: terminalOr };
+
+    const now = new Date();
+    let where: Prisma.BookingWhereInput = baseWhere;
+    let orderBy: Prisma.BookingOrderByWithRelationInput | Prisma.BookingOrderByWithRelationInput[] =
+      { createdAt: 'desc' };
+
+    if (query.timeScope === BookingTimeScope.Past) {
+      where = { AND: [baseWhere, terminalOr] };
+      orderBy = { scheduledTime: 'desc' };
+    } else if (query.timeScope === BookingTimeScope.Current) {
+      where = {
+        AND: [
+          baseWhere,
+          notTerminal,
+          {
+            OR: [
+              { status: { equals: 'in_progress', mode: 'insensitive' } },
+              { scheduledTime: { lt: now } },
+            ],
+          },
+        ],
+      };
+      orderBy = { scheduledTime: 'asc' };
+    } else if (query.timeScope === BookingTimeScope.Upcoming) {
+      where = {
+        AND: [baseWhere, notTerminal, { scheduledTime: { gte: now } }],
+      };
+      orderBy = { scheduledTime: 'asc' };
+    }
+
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const skip = (page - 1) * pageSize;
@@ -308,7 +385,7 @@ export class BookingsService {
       this.prisma.booking.count({ where }),
       this.prisma.booking.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         skip,
         take: pageSize,
         include: bookingInclude,
@@ -436,6 +513,23 @@ export class BookingsService {
     }
     if (d.returnTime !== undefined) {
       data.returnTime = d.returnTime ? new Date(d.returnTime) : null;
+    }
+    if (d.bookingReference !== undefined) {
+      if (requester.typ === 'driver') {
+        throw new ForbiddenException('Drivers cannot change booking reference');
+      }
+      const ref = d.bookingReference?.trim();
+      if (!ref) {
+        throw new BadRequestException('bookingReference cannot be empty');
+      }
+      const clash = await this.prisma.booking.findFirst({
+        where: { bookingReference: ref, uuid: { not: uuid } },
+        select: { id: true },
+      });
+      if (clash) {
+        throw new BadRequestException('That booking reference is already in use');
+      }
+      data.bookingReference = ref;
     }
 
     if (Object.keys(data).length === 0) {

@@ -24,6 +24,7 @@ import { Public } from '../auth/decorators/public.decorator';
 import { DriverSelfGuard } from '../auth/guards/driver-self.guard';
 import { CreateCarDto } from './dto/create-car.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
+import { PatchMyAvailabilityDto } from './dto/patch-my-availability.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { DriversService } from './drivers.service';
@@ -72,6 +73,8 @@ export class DriversController {
         email: { type: 'string' },
         phone: { type: 'string' },
         photoUrl: { type: 'string', nullable: true },
+        ratingAverage: { type: 'number', nullable: true },
+        ratingCount: { type: 'integer' },
         isAvailable: { type: 'boolean' },
         isActive: { type: 'boolean' },
         car: {
@@ -110,6 +113,26 @@ export class DriversController {
   })
   getMyProfile(@CurrentUser() user: AuthenticatedUser) {
     return this.driversService.getMyProfile(user);
+  }
+
+  @ApiAccessTokenInSwagger()
+  @Patch('me/availability')
+  @ApiOperation({
+    summary: 'Set my availability for new assignments',
+    description:
+      'Drivers only. When `isAvailable` is false, dispatchers should not assign new bookings to this driver.',
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: { isAvailable: { type: 'boolean' } },
+    },
+  })
+  patchMyAvailability(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: PatchMyAvailabilityDto,
+  ) {
+    return this.driversService.patchMyAvailability(user, dto.isAvailable);
   }
 
   @ApiAccessTokenInSwagger()

@@ -25,12 +25,15 @@ async function bootstrap() {
   setupSwagger(app);
 
   const port = Number(process.env.PORT ?? 3000);
-  await app.listen(port);
+  /** Bind all interfaces so phones/emulators on the LAN can reach the API (not loopback-only). */
+  const host = process.env.HOST ?? '0.0.0.0';
+  await app.listen(port, host);
 
   const base =
     process.env.APP_URL?.replace(/\/$/, '') ?? `http://localhost:${port}`;
   const docsPath = getSwaggerPath();
-  Logger.log(`Backend: ${base}`, 'Bootstrap');
+  Logger.log(`Listening on http://${host}:${port}`, 'Bootstrap');
+  Logger.log(`Backend (e.g. browser): ${base}`, 'Bootstrap');
   Logger.log(`Swagger: ${base}/${docsPath}`, 'Bootstrap');
 }
 void bootstrap();

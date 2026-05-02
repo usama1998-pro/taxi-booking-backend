@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -22,6 +23,16 @@ export class CreateBookingDto {
   @IsOptional()
   @IsUUID()
   driverId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Unique customer-facing reference (e.g. PNR). If omitted, the server assigns one.',
+    maxLength: 120,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  bookingReference?: string;
 
   @ApiProperty({
     example: { lat: 40.7128, lng: -74.006, label: 'Pickup' },

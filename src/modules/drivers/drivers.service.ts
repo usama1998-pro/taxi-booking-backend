@@ -103,6 +103,20 @@ export class DriversService {
     return { ...withoutPassword(driver), car: driver.car };
   }
 
+  async patchMyAvailability(
+    requester: AuthenticatedUser,
+    isAvailable: boolean,
+  ): Promise<{ isAvailable: boolean }> {
+    if (requester.typ !== 'driver') {
+      throw new ForbiddenException('Only drivers can update availability');
+    }
+    await this.prisma.driver.update({
+      where: { id: requester.sub },
+      data: { isAvailable },
+    });
+    return { isAvailable };
+  }
+
   async getMyProfile(requester: AuthenticatedUser): Promise<DriverProfile> {
     if (requester.typ !== 'driver') {
       throw new ForbiddenException('Only drivers can access this endpoint');

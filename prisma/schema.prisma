@@ -19,6 +19,11 @@ model User {
   createdAt     DateTime  @default(now())
 }
 
+enum InvoiceAddressKind {
+  LOCATION
+  AIRPORT
+}
+
 model Driver {
   id            String    @id @default(uuid())
   userId        String?   @unique @map("user_id")
@@ -26,13 +31,44 @@ model Driver {
   email         String    @unique
   phone         String    @unique
   password      String
-  photoUrl      String?
-  isAvailable   Boolean   @default(true)
-  isActive      Boolean   @default(true)
+  photoUrl        String?
+  ratingAverage   Float?
+  ratingCount     Int       @default(0)
+  isAvailable     Boolean   @default(true)
+  isActive        Boolean   @default(true)
   tokenVersion  Int       @default(0) @map("token_version")
   user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   car           Car?
   bookings      Booking[]
+  invoices      DriverInvoice[]
+}
+
+model DriverInvoice {
+  id                 String              @id @default(uuid())
+  driverId           String              @map("driver_id")
+  driver             Driver              @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  fullName           String              @map("full_name")
+  phoneNumber        String              @map("phone_number")
+  bookingReference   String              @map("booking_reference")
+  pickupDate         DateTime            @map("pickup_date")
+  pickupKind         InvoiceAddressKind  @map("pickup_kind")
+  pickupAddress      String?             @map("pickup_address")
+  pickupAirline      String?             @map("pickup_airline")
+  pickupFlightNo     String?             @map("pickup_flight_no")
+  dropoffKind        InvoiceAddressKind  @map("dropoff_kind")
+  dropoffAddress     String?             @map("dropoff_address")
+  dropoffAirline     String?             @map("dropoff_airline")
+  dropoffFlightNo    String?             @map("dropoff_flight_no")
+  priceAmount        Decimal             @map("price_amount") @db.Decimal(12, 2)
+  taxRate            Decimal             @default(0.10) @map("tax_rate") @db.Decimal(8, 6)
+  taxAmount          Decimal             @map("tax_amount") @db.Decimal(12, 2)
+  totalAmount        Decimal             @map("total_amount") @db.Decimal(12, 2)
+  sourceBookingUuid  String?             @map("source_booking_uuid")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+
+  @@index([driverId, createdAt])
+  @@map("driver_invoices")
 }
 
 model Car {
@@ -45,10 +81,11 @@ model Car {
 }
 
 model Booking {
-  id              String   @id @default(uuid())
-  uuid            String   @unique @default(uuid())
-  userId          String
-  driverId        String?
+  id                String   @id @default(uuid())
+  uuid              String   @unique @default(uuid())
+  bookingReference  String   @unique @map("booking_reference")
+  userId            String
+  driverId          String?
   customerName    String?  @map("customer_name")
   customerEmail   String?  @map("customer_email")
   customerPhone   String?  @map("customer_phone")

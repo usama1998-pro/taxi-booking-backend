@@ -46,7 +46,7 @@ export class BookingsController {
   @ApiOperation({
     summary: 'List bookings for the current account',
     description:
-      'Passengers see their own bookings. Drivers see bookings assigned to them. Paginated with `page` (1-based) and `pageSize` (default 20, max 100).',
+      'Passengers see their own bookings. Drivers see bookings assigned to them. Paginated with `page` (1-based) and `pageSize` (default 20, max 100). Optional `timeScope=past|current|upcoming` filters by trip timeline; omit for all bookings (newest `createdAt` first).',
   })
   @ApiOkResponse({
     schema: {
