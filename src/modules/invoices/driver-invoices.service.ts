@@ -19,6 +19,27 @@ function assertDriver(user: AuthenticatedUser): void {
   }
 }
 
+function formatChildSeatsLine(
+  infant: number,
+  child: number,
+  booster: number,
+): string | null {
+  if (!infant && !child && !booster) {
+    return null;
+  }
+  const parts: string[] = [];
+  if (infant > 0) {
+    parts.push(`${infant} infant carrier${infant === 1 ? '' : 's'}`);
+  }
+  if (child > 0) {
+    parts.push(`${child} child seat${child === 1 ? '' : 's'}`);
+  }
+  if (booster > 0) {
+    parts.push(`${booster} booster${booster === 1 ? '' : 's'}`);
+  }
+  return parts.join(', ');
+}
+
 function assertAddressFields(
   label: string,
   kind: InvoiceAddressKind,
@@ -63,6 +84,7 @@ function mapInvoice(row: {
   taxAmount: Prisma.Decimal;
   totalAmount: Prisma.Decimal;
   sourceBookingUuid: string | null;
+  childSeatsSummary: string | null;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -86,6 +108,7 @@ function mapInvoice(row: {
     taxAmount: toMoneyResponse(row.taxAmount),
     totalAmount: toMoneyResponse(row.totalAmount),
     sourceBookingUuid: row.sourceBookingUuid,
+    childSeatsSummary: row.childSeatsSummary,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -138,9 +161,26 @@ export class DriverInvoicesService {
         bookingReference: dto.bookingReference.trim(),
         driverId: user.sub,
       },
-      select: { uuid: true },
+      select: {
+        uuid: true,
+        infantCarrierCount: true,
+        childSeatCount: true,
+        boosterCount: true,
+      },
     });
     const sourceBookingUuid = linkedBooking?.uuid ?? null;
+
+    const dtoSeats = dto.childSeatsSummary?.trim();
+    let childSeatsSummary: string | null = null;
+    if (dtoSeats) {
+      childSeatsSummary = dtoSeats;
+    } else if (linkedBooking) {
+      childSeatsSummary = formatChildSeatsLine(
+        linkedBooking.infantCarrierCount,
+        linkedBooking.childSeatCount,
+        linkedBooking.boosterCount,
+      );
+    }
 
     const priceAmount = new Prisma.Decimal(dto.priceAmount).toDP(2);
     const taxAmount = priceAmount.mul(TAX_RATE).toDP(2);
@@ -171,6 +211,7 @@ export class DriverInvoicesService {
         taxAmount,
         totalAmount,
         sourceBookingUuid,
+        childSeatsSummary,
       },
     });
 

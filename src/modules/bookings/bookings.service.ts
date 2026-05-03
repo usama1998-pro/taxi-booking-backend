@@ -293,6 +293,9 @@ export class BookingsService {
             status: dto.status,
             luggageCount: dto.luggageCount,
             passengerCount: dto.passengerCount,
+            infantCarrierCount: dto.infantCarrierCount ?? 0,
+            childSeatCount: dto.childSeatCount ?? 0,
+            boosterCount: dto.boosterCount ?? 0,
             note: dto.note,
           },
           include: bookingInclude,
@@ -348,31 +351,38 @@ export class BookingsService {
 
     const notTerminal: Prisma.BookingWhereInput = { NOT: terminalOr };
 
-    const now = new Date();
     let where: Prisma.BookingWhereInput = baseWhere;
     let orderBy: Prisma.BookingOrderByWithRelationInput | Prisma.BookingOrderByWithRelationInput[] =
       { createdAt: 'desc' };
 
     if (query.timeScope === BookingTimeScope.Past) {
       where = { AND: [baseWhere, terminalOr] };
-      orderBy = { scheduledTime: 'desc' };
+      orderBy = [
+        { completedAt: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' },
+      ];
     } else if (query.timeScope === BookingTimeScope.Current) {
+      /** Active trip: driver started the ride (`in_progress`). */
+      where = {
+        AND: [
+          baseWhere,
+          notTerminal,
+          { status: { equals: 'in_progress', mode: 'insensitive' } },
+        ],
+      };
+      orderBy = { createdAt: 'desc' };
+    } else if (query.timeScope === BookingTimeScope.Upcoming) {
+      /** Queue: not terminal and not yet started (e.g. pending, assigned). */
       where = {
         AND: [
           baseWhere,
           notTerminal,
           {
-            OR: [
-              { status: { equals: 'in_progress', mode: 'insensitive' } },
-              { scheduledTime: { lt: now } },
-            ],
+            NOT: {
+              status: { equals: 'in_progress', mode: 'insensitive' },
+            },
           },
         ],
-      };
-      orderBy = { scheduledTime: 'asc' };
-    } else if (query.timeScope === BookingTimeScope.Upcoming) {
-      where = {
-        AND: [baseWhere, notTerminal, { scheduledTime: { gte: now } }],
       };
       orderBy = { scheduledTime: 'asc' };
     }
@@ -488,13 +498,55 @@ export class BookingsService {
       data.price = d.price;
     }
     if (d.status !== undefined) {
-      data.status = d.status;
+      const nextRaw = String(d.status).trim();
+      const nextLower = nextRaw.toLowerCase();
+      const curLower = booking.status.toLowerCase();
+      const alreadyTerminal =
+        curLower === 'completed' ||
+        curLower === 'cancelled' ||
+        curLower === 'canceled';
+      if (alreadyTerminal) {
+        throw new BadRequestException('Cannot change status of a closed booking');
+      }
+      if (requester.typ === 'driver') {
+        if (nextLower === 'completed') {
+          if (curLower !== 'in_progress') {
+            throw new BadRequestException(
+              'Start the ride before marking it complete',
+            );
+          }
+          data.status = 'completed';
+          data.completedAt = new Date();
+        } else if (nextLower === 'in_progress') {
+          data.status = 'in_progress';
+        } else {
+          throw new ForbiddenException(
+            'Drivers may only start a ride (in progress) or mark it complete',
+          );
+        }
+      } else {
+        data.status = nextRaw;
+        if (nextLower === 'completed') {
+          data.completedAt = new Date();
+        } else if (nextLower === 'cancelled' || nextLower === 'canceled') {
+          data.completedAt = null;
+        }
+      }
     }
     if (d.luggageCount !== undefined) {
       data.luggageCount = d.luggageCount;
     }
     if (d.passengerCount !== undefined) {
       data.passengerCount = d.passengerCount;
+    }
+    if (d.infantCarrierCount !== undefined) {
+      data.infantCarrierCount = d.infantCarrierCount;
+    }
+    if (d.childSeatCount !== undefined) {
+      data.childSeatCount = d.childSeatCount;
+    }
+    if (d.boosterCount !== undefined) {
+      data.boosterCount = d.boosterCount;
     }
     if (d.note !== undefined) {
       data.note = d.note;
@@ -536,11 +588,41 @@ export class BookingsService {
       throw new BadRequestException('No fields to update');
     }
 
-    const updated = await this.prisma.booking.update({
-      where: { uuid },
-      data,
-      include: bookingInclude,
+    const becameCompleted =
+      typeof data.status === 'string' && data.status.toLowerCase() === 'completed';
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.booking.update({
+        where: { uuid },
+        data,
+        include: bookingInclude,
+      });
+
+      if (becameCompleted && booking.driverId) {
+        const activeOther = await tx.booking.count({
+          where: {
+            driverId: booking.driverId,
+            uuid: { not: uuid },
+            NOT: {
+              OR: [
+                { status: { equals: 'completed', mode: 'insensitive' } },
+                { status: { equals: 'cancelled', mode: 'insensitive' } },
+                { status: { equals: 'canceled', mode: 'insensitive' } },
+              ],
+            },
+          },
+        });
+        if (activeOther === 0) {
+          await tx.driver.update({
+            where: { id: booking.driverId },
+            data: { isAvailable: true },
+          });
+        }
+      }
+
+      return row;
     });
+
     return this.toPublicBooking(updated);
   }
 

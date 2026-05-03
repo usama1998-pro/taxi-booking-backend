@@ -64,6 +64,7 @@ model DriverInvoice {
   taxAmount          Decimal             @map("tax_amount") @db.Decimal(12, 2)
   totalAmount        Decimal             @map("total_amount") @db.Decimal(12, 2)
   sourceBookingUuid  String?             @map("source_booking_uuid")
+  childSeatsSummary  String?             @map("child_seats_summary") @db.VarChar(500)
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
 
@@ -96,10 +97,15 @@ model Booking {
   scheduledTime   DateTime
   price           Float
   status          String
-  luggageCount    Int
-  passengerCount  Int
-  note            String?
+  luggageCount       Int
+  passengerCount     Int
+  infantCarrierCount Int @default(0)
+  childSeatCount     Int @default(0)
+  boosterCount       Int @default(0)
+  note               String?
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   driver          Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
   createdAt       DateTime @default(now())
+  /** Set when status becomes `completed`; used to sort past bookings (newest completion first). */
+  completedAt     DateTime? @map("completed_at")
 }

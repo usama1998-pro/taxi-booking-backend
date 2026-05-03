@@ -95,4 +95,14 @@ export class CreateDriverInvoiceDto {
   @IsNumber()
   @Min(0)
   priceAmount!: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional line for child seats on the invoice. If omitted and the booking reference matches an assigned booking with child seats, the server fills this automatically.',
+    maxLength: 500,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  childSeatsSummary?: string;
 }

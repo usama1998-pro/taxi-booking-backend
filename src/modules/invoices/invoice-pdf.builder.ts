@@ -20,6 +20,7 @@ export type DriverInvoicePdfModel = {
   taxAmount: number;
   totalAmount: number;
   sourceBookingUuid: string | null;
+  childSeatsSummary: string | null;
   createdAt: string;
 };
 
@@ -116,6 +117,9 @@ export function buildDriverInvoicePdf(inv: DriverInvoicePdfModel): Promise<Buffe
     row('Pick-up date', pickupDateLabel(inv.pickupDate));
     row(pickupLabel, pickup);
     row(dropLabel, dropoff);
+    if (inv.childSeatsSummary?.trim()) {
+      row('Child seats', inv.childSeatsSummary.trim());
+    }
     doc.moveDown();
 
     doc.fontSize(12).font('Helvetica-Bold').text('Amounts');

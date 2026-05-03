@@ -2,7 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
 
-/** When set, filters and orders the list for driver/passenger trip timelines. Omit for an unfiltered list (newest first by `createdAt`). */
+/** When set, filters the list for driver/passenger trip timelines. Omit `timeScope` for an unfiltered list (`createdAt` desc). */
 export enum BookingTimeScope {
   Past = 'past',
   Current = 'current',
@@ -39,7 +39,7 @@ export class ListBookingsQueryDto {
   @ApiPropertyOptional({
     enum: BookingTimeScope,
     description:
-      '`past`: completed or cancelled. `current`: active or overdue (not terminal). `upcoming`: scheduled from now onward (not terminal). Omit to list all bookings ordered by `createdAt` (newest first).',
+      '`past`: completed or cancelled, ordered by `completedAt` then `createdAt` (newest first). `current`: status `in_progress`, `createdAt` desc. `upcoming`: not terminal and not `in_progress` (e.g. pending, assigned), soonest `scheduledTime` first.',
   })
   @IsOptional()
   @IsEnum(BookingTimeScope)

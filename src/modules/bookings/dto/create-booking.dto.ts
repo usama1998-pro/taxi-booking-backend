@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -73,6 +74,27 @@ export class CreateBookingDto {
   @IsInt()
   @Min(1)
   passengerCount!: number;
+
+  @ApiPropertyOptional({ example: 0, description: 'Infant carrier (0–6 months)' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(4)
+  infantCarrierCount?: number;
+
+  @ApiPropertyOptional({ example: 0, description: 'Child seat (6 months – 3 years)' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(4)
+  childSeatCount?: number;
+
+  @ApiPropertyOptional({ example: 0, description: 'Booster (3–12 years)' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(4)
+  boosterCount?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -46,7 +46,7 @@ export class BookingsController {
   @ApiOperation({
     summary: 'List bookings for the current account',
     description:
-      'Passengers see their own bookings. Drivers see bookings assigned to them. Paginated with `page` (1-based) and `pageSize` (default 20, max 100). Optional `timeScope=past|current|upcoming` filters by trip timeline; omit for all bookings (newest `createdAt` first).',
+      'Passengers see their own bookings. Drivers see bookings assigned to them. Paginated with `page` (1-based) and `pageSize` (default 20, max 100). Optional `timeScope=past|current|upcoming`: **past** — completed/cancelled, newest completion first; **current** — `in_progress` only; **upcoming** — queued (not started), soonest trip first. Omit for all bookings (`createdAt` desc).',
   })
   @ApiOkResponse({
     schema: {
@@ -89,7 +89,7 @@ export class BookingsController {
   @ApiOperation({
     summary: 'Update booking',
     description:
-      'Passenger may update their booking (including assigning a driver). Assigned driver may update fields such as status. Set `"driverId": null` to unassign (passenger only). Path uses booking `uuid`.',
+      'Passenger may update their booking (including assigning a driver). Assigned drivers may set `status` to `in_progress` (start ride) or `completed` (only after it is in progress). Set `"driverId": null` to unassign (passenger only). Path uses booking `uuid`.',
   })
   update(
     @Param('uuid', ParseUUIDPipe) uuid: string,
