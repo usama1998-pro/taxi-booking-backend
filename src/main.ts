@@ -4,41 +4,16 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { getSwaggerPath, setupSwagger } from './core/swagger/setup-swagger';
 
-const DEFAULT_CORS_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-
-function buildCorsOriginSet(): Set<string> {
-  const set = new Set(DEFAULT_CORS_ORIGINS);
-  const raw = process.env.CORS_ORIGINS?.trim();
-  if (!raw) {
-    return set;
-  }
-  for (const part of raw.split(',')) {
-    const o = part.trim().replace(/\/$/, '');
-    if (o.length > 0) {
-      set.add(o);
-    }
-  }
-  return set;
-}
-
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  const corsOrigins = buildCorsOriginSet();
+  // Reflects the request `Origin` — any website can call this API from the browser.
+  // (Using `origin: '*'` would break `credentials: true`.)
   app.enableCors({
-    origin: (origin, callback) => {
-      if (!origin) {
-        callback(null, true);
-        return;
-      }
-      if (corsOrigins.has(origin)) {
-        callback(null, true);
-        return;
-      }
-      callback(null, false);
-    },
+    origin: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
     credentials: true,
+    maxAge: 86_400,
   });
   app.useGlobalPipes(
     new ValidationPipe({
@@ -60,6 +35,6 @@ async function bootstrap() {
   Logger.log(`Listening on http://${host}:${port}`, 'Bootstrap');
   Logger.log(`Backend (e.g. browser): ${base}`, 'Bootstrap');
   Logger.log(`Swagger: ${base}/${docsPath}`, 'Bootstrap');
-  Logger.log(`CORS: ${corsOrigins.size} allowed origin(s)`, 'Bootstrap');
+  Logger.log('CORS: all origins allowed (reflect request Origin)', 'Bootstrap');
 }
 void bootstrap();
