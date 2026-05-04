@@ -16,6 +16,22 @@ function normalizeToPrismaMysqlUrl(url: string): string {
 }
 
 /**
+ * MariaDB connector pool size via URI (helps shared hosts with `max_connections_per_hour`).
+ * Set `DATABASE_POOL_CONNECTION_LIMIT=2` (or `1`) on Hostinger-style plans if needed.
+ */
+function applyPoolConnectionLimit(url: string): string {
+  const limit = process.env.DATABASE_POOL_CONNECTION_LIMIT?.trim();
+  if (!limit || !/^\d+$/.test(limit)) {
+    return url;
+  }
+  if (/[?&]connectionLimit=/i.test(url)) {
+    return url;
+  }
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}connectionLimit=${limit}`;
+}
+
+/**
  * Compose service hostname `mysql` only resolves on the Docker network.
  * Nest on the host (Windows/macOS/Linux) must use `localhost` + the published host port.
  */
@@ -42,12 +58,12 @@ export function getDatabaseUrl(): string {
     process.env.DATABASE_DIRECT_URL?.trim() ?? process.env.DIRECT_URL?.trim();
 
   if (direct && isDirectMysqlFamilyUrl(direct)) {
-    return normalizeToPrismaMysqlUrl(direct);
+    return applyPoolConnectionLimit(normalizeToPrismaMysqlUrl(direct));
   }
 
   const url = process.env.DATABASE_URL?.trim();
   if (url && isDirectMysqlFamilyUrl(url)) {
-    return normalizeToPrismaMysqlUrl(url);
+    return applyPoolConnectionLimit(normalizeToPrismaMysqlUrl(url));
   }
 
   const host = resolvedDatabaseHost(process.env.DATABASE_HOST);
@@ -63,7 +79,9 @@ export function getDatabaseUrl(): string {
   }
 
   const enc = encodeURIComponent;
-  return `mysql://${enc(user)}:${enc(password)}@${host}:${port}/${enc(database)}`;
+  return applyPoolConnectionLimit(
+    `mysql://${enc(user)}:${enc(password)}@${host}:${port}/${enc(database)}`,
+  );
 }
 
 /**
