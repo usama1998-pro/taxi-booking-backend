@@ -1,4 +1,6 @@
+import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import * as fs from 'node:fs';
+import type { PoolConfig } from 'mariadb';
 
 /**
  * Direct TCP URL for Prisma (`mysql://`) and related tooling.
@@ -31,6 +33,74 @@ function applyPoolConnectionLimit(url: string): string {
   return `${url}${sep}connectionLimit=${limit}`;
 }
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function hasUrlQueryParam(url: string, key: string): boolean {
+  return new RegExp(`[?&]${escapeRegExp(key)}=`, 'i').test(url);
+}
+
+function appendUrlQueryParam(url: string, key: string, value: string): string {
+  if (hasUrlQueryParam(url, key)) {
+    return url;
+  }
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}${key}=${encodeURIComponent(value)}`;
+}
+
+function isTruthyEnv(raw: string | undefined): boolean {
+  const v = raw?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+}
+
+function isFalsyEnv(raw: string | undefined): boolean {
+  const v = raw?.trim().toLowerCase();
+  return v === '0' || v === 'false' || v === 'no' || v === 'off';
+}
+
+/** TLS enabled but do not verify server certificate (shared hosts with non-public CA). */
+function useInsecureTls(): boolean {
+  return isTruthyEnv(process.env.DATABASE_SSL) && isFalsyEnv(process.env.DATABASE_SSL_REJECT_UNAUTHORIZED);
+}
+
+function parseMariadbUrlToPoolConfig(url: string): PoolConfig {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- no public parse API on `mariadb` root export
+  const ConnectionOptions = require('mariadb/lib/config/connection-options') as {
+    parse: (connectionString: string) => PoolConfig;
+  };
+  return ConnectionOptions.parse(url);
+}
+
+/**
+ * Shared MariaDB connector options from env (applied to every `mysql://` URL).
+ * Hostinger / remote MySQL often requires TLS; the driver default `connectTimeout` (1000ms)
+ * is often too short for cross-network TLS handshakes — see `DATABASE_SSL` and
+ * `DATABASE_CONNECT_TIMEOUT_MS` in `.env.example`.
+ */
+export function applyEnvMysqlDriverQueryParams(url: string): string {
+  let out = url;
+
+  if (isTruthyEnv(process.env.DATABASE_SSL)) {
+    out = appendUrlQueryParam(out, 'ssl', 'true');
+  }
+
+  if (!hasUrlQueryParam(out, 'connectTimeout')) {
+    const custom = process.env.DATABASE_CONNECT_TIMEOUT_MS?.trim();
+    if (custom && /^\d+$/.test(custom)) {
+      out = appendUrlQueryParam(out, 'connectTimeout', custom);
+    } else if (isTruthyEnv(process.env.DATABASE_SSL)) {
+      out = appendUrlQueryParam(out, 'connectTimeout', '20000');
+    }
+  }
+
+  if (isTruthyEnv(process.env.DATABASE_ALLOW_PUBLIC_KEY_RETRIEVAL)) {
+    out = appendUrlQueryParam(out, 'allowPublicKeyRetrieval', 'true');
+  }
+
+  return out;
+}
+
 /**
  * Compose service hostname `mysql` only resolves on the Docker network.
  * Nest on the host (Windows/macOS/Linux) must use `localhost` + the published host port.
@@ -58,12 +128,16 @@ export function getDatabaseUrl(): string {
     process.env.DATABASE_DIRECT_URL?.trim() ?? process.env.DIRECT_URL?.trim();
 
   if (direct && isDirectMysqlFamilyUrl(direct)) {
-    return applyPoolConnectionLimit(normalizeToPrismaMysqlUrl(direct));
+    return applyEnvMysqlDriverQueryParams(
+      applyPoolConnectionLimit(normalizeToPrismaMysqlUrl(direct)),
+    );
   }
 
   const url = process.env.DATABASE_URL?.trim();
   if (url && isDirectMysqlFamilyUrl(url)) {
-    return applyPoolConnectionLimit(normalizeToPrismaMysqlUrl(url));
+    return applyEnvMysqlDriverQueryParams(
+      applyPoolConnectionLimit(normalizeToPrismaMysqlUrl(url)),
+    );
   }
 
   const host = resolvedDatabaseHost(process.env.DATABASE_HOST);
@@ -79,8 +153,10 @@ export function getDatabaseUrl(): string {
   }
 
   const enc = encodeURIComponent;
-  return applyPoolConnectionLimit(
-    `mysql://${enc(user)}:${enc(password)}@${host}:${port}/${enc(database)}`,
+  return applyEnvMysqlDriverQueryParams(
+    applyPoolConnectionLimit(
+      `mysql://${enc(user)}:${enc(password)}@${host}:${port}/${enc(database)}`,
+    ),
   );
 }
 
@@ -89,6 +165,33 @@ export function getDatabaseUrl(): string {
  */
 export function getMariaDbDriverUrl(): string {
   return getDatabaseUrl().replace(/^mysql:\/\//i, 'mariadb://');
+}
+
+/**
+ * Options for `mariadb.createPool()` (health check). Uses a plain URL, or a parsed config when
+ * `DATABASE_SSL=1` and `DATABASE_SSL_REJECT_UNAUTHORIZED=0` (TLS without cert verification).
+ */
+export function getMariaDbPoolCreateArg(): string | PoolConfig {
+  const url = getMariaDbDriverUrl();
+  if (!useInsecureTls()) {
+    return url;
+  }
+  return {
+    ...parseMariadbUrlToPoolConfig(url),
+    ssl: { rejectUnauthorized: false },
+  };
+}
+
+/** Same semantics as {@link getMariaDbPoolCreateArg}; uses Prisma adapter's `mariadb` types (nested dep). */
+export function getPrismaMariaDbAdapterConfig(): ConstructorParameters<typeof PrismaMariaDb>[0] {
+  if (!useInsecureTls()) {
+    return getDatabaseUrl();
+  }
+  const url = getMariaDbDriverUrl();
+  return {
+    ...parseMariadbUrlToPoolConfig(url),
+    ssl: { rejectUnauthorized: false },
+  } as ConstructorParameters<typeof PrismaMariaDb>[0];
 }
 
 /**

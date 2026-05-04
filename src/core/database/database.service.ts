@@ -1,13 +1,13 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import * as mariadb from 'mariadb';
-import { getMariaDbDriverUrl } from './database-url';
+import { getMariaDbPoolCreateArg } from './database-url';
 
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   private pool: mariadb.Pool | null = null;
 
   onModuleInit(): void {
-    this.pool = mariadb.createPool(getMariaDbDriverUrl());
+    this.pool = mariadb.createPool(getMariaDbPoolCreateArg());
   }
 
   async onModuleDestroy(): Promise<void> {

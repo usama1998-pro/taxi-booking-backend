@@ -7,7 +7,7 @@
 import 'dotenv/config';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
-import { getDatabaseUrl } from '../src/core/database/database-url';
+import { getPrismaMariaDbAdapterConfig } from '../src/core/database/database-url';
 
 const REQUIRED_CONFIRMATION = 'YES_FLUSH';
 
@@ -21,7 +21,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const adapter = new PrismaMariaDb(getDatabaseUrl());
+  const adapter = new PrismaMariaDb(getPrismaMariaDbAdapterConfig());
   const prisma = new PrismaClient({ adapter });
   try {
     await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');

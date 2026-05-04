@@ -15,7 +15,7 @@ export class HealthController {
   constructor(private readonly database: DatabaseService) {}
 
   @Get('db')
-  @ApiOperation({ summary: 'PostgreSQL connectivity check' })
+  @ApiOperation({ summary: 'MySQL / MariaDB connectivity check' })
   @ApiResponse({
     status: 200,
     description: 'Database is reachable',

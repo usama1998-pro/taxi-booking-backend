@@ -8,12 +8,12 @@ import * as bcrypt from 'bcrypt';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
 import * as readline from 'node:readline/promises';
-import { getDatabaseUrl } from '../src/core/database/database-url';
+import { getPrismaMariaDbAdapterConfig } from '../src/core/database/database-url';
 
 const SALT_ROUNDS = 10;
 
 async function main(): Promise<void> {
-  const adapter = new PrismaMariaDb(getDatabaseUrl());
+  const adapter = new PrismaMariaDb(getPrismaMariaDbAdapterConfig());
   const prisma = new PrismaClient({ adapter });
   const rl = readline.createInterface({
     input: process.stdin,
