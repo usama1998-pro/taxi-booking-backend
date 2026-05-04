@@ -72,3 +72,15 @@ export function getDatabaseUrl(): string {
 export function getMariaDbDriverUrl(): string {
   return getDatabaseUrl().replace(/^mysql:\/\//i, 'mariadb://');
 }
+
+/**
+ * URL for `prisma.config.ts` only. On CI/build hosts that run `prisma generate` without DB
+ * secrets, set `PRISMA_BUILD_SCHEMA_ONLY=1` to use a placeholder (Prisma does not connect for generate).
+ * Do **not** use that flag when running `prisma migrate` / `db push` against a real database.
+ */
+export function getPrismaConfigDatasourceUrl(): string {
+  if (process.env.PRISMA_BUILD_SCHEMA_ONLY === '1') {
+    return 'mysql://prisma:prisma@127.0.0.1:3306/_prisma_schema_only';
+  }
+  return getDatabaseUrl();
+}
