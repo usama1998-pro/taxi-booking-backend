@@ -343,9 +343,9 @@ export class BookingsService {
 
     const terminalOr: Prisma.BookingWhereInput = {
       OR: [
-        { status: { equals: 'completed', mode: 'insensitive' } },
-        { status: { equals: 'cancelled', mode: 'insensitive' } },
-        { status: { equals: 'canceled', mode: 'insensitive' } },
+        { status: 'completed' },
+        { status: 'cancelled' },
+        { status: 'canceled' },
       ],
     };
 
@@ -367,7 +367,7 @@ export class BookingsService {
         AND: [
           baseWhere,
           notTerminal,
-          { status: { equals: 'in_progress', mode: 'insensitive' } },
+          { status: 'in_progress' },
         ],
       };
       orderBy = { createdAt: 'desc' };
@@ -378,9 +378,7 @@ export class BookingsService {
           baseWhere,
           notTerminal,
           {
-            NOT: {
-              status: { equals: 'in_progress', mode: 'insensitive' },
-            },
+            NOT: { status: 'in_progress' },
           },
         ],
       };
@@ -605,9 +603,9 @@ export class BookingsService {
             uuid: { not: uuid },
             NOT: {
               OR: [
-                { status: { equals: 'completed', mode: 'insensitive' } },
-                { status: { equals: 'cancelled', mode: 'insensitive' } },
-                { status: { equals: 'canceled', mode: 'insensitive' } },
+                { status: 'completed' },
+                { status: 'cancelled' },
+                { status: 'canceled' },
               ],
             },
           },

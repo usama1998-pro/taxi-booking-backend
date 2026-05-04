@@ -1,22 +1,13 @@
-import {
-  Injectable,
-  Logger,
-  OnModuleDestroy,
-  OnModuleInit,
-} from '@nestjs/common';
-import { Pool, type PoolConfig } from 'pg';
-import { getDatabaseUrl } from './database-url';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import * as mariadb from 'mariadb';
+import { getMariaDbDriverUrl } from './database-url';
 
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(DatabaseService.name);
-  private pool: Pool | null = null;
+  private pool: mariadb.Pool | null = null;
 
   onModuleInit(): void {
-    this.pool = new Pool(this.buildPoolConfig());
-    this.pool.on('error', (err: Error) => {
-      this.logger.error(`PostgreSQL pool error: ${err.message}`);
-    });
+    this.pool = mariadb.createPool(getMariaDbDriverUrl());
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -30,15 +21,12 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     if (!this.pool) {
       throw new Error('Database pool is not initialized');
     }
-    const client = await this.pool.connect();
+    let conn: mariadb.PoolConnection | undefined;
     try {
-      await client.query('SELECT 1');
+      conn = await this.pool.getConnection();
+      await conn.query('SELECT 1');
     } finally {
-      client.release();
+      conn?.release();
     }
-  }
-
-  private buildPoolConfig(): PoolConfig {
-    return { connectionString: getDatabaseUrl() };
   }
 }

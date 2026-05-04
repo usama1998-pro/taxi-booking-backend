@@ -11,7 +11,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # `.dockerignore` excludes `.env`; Prisma loads `prisma.config.ts` during generate.
 # The URL is not used to connect at image build time, only to satisfy config resolution.
-ENV DATABASE_URL="postgresql://taxi:taxi@127.0.0.1:5432/taxi_booking"
+ENV DATABASE_URL="mysql://taxi:taxi@127.0.0.1:3306/taxi_booking"
 RUN npm run build && npm prune --omit=dev
 
 FROM node:22-alpine AS runner

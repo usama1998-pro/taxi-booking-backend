@@ -5,17 +5,15 @@
  */
 import 'dotenv/config';
 import * as bcrypt from 'bcrypt';
-import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
-import { Pool } from 'pg';
 import * as readline from 'node:readline/promises';
 import { getDatabaseUrl } from '../src/core/database/database-url';
 
 const SALT_ROUNDS = 10;
 
 async function main(): Promise<void> {
-  const pool = new Pool({ connectionString: getDatabaseUrl() });
-  const adapter = new PrismaPg(pool);
+  const adapter = new PrismaMariaDb(getDatabaseUrl());
   const prisma = new PrismaClient({ adapter });
   const rl = readline.createInterface({
     input: process.stdin,
@@ -70,7 +68,6 @@ async function main(): Promise<void> {
     process.exitCode = 1;
   } finally {
     await prisma.$disconnect();
-    await pool.end();
     rl.close();
   }
 }

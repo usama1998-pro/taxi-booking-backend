@@ -1,13 +1,12 @@
 /**
- * Truncates ALL tables in ALL non-system PostgreSQL schemas.
+ * Truncates all base tables in the current MySQL database (current `DATABASE()`).
  *
  * Usage:
  *   FLUSH_ALL_CONFIRM=YES_FLUSH npm run db:flush
  */
 import 'dotenv/config';
-import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
-import { Pool } from 'pg';
 import { getDatabaseUrl } from '../src/core/database/database-url';
 
 const REQUIRED_CONFIRMATION = 'YES_FLUSH';
@@ -22,33 +21,24 @@ async function main(): Promise<void> {
     return;
   }
 
-  const pool = new Pool({ connectionString: getDatabaseUrl() });
-  const adapter = new PrismaPg(pool);
+  const adapter = new PrismaMariaDb(getDatabaseUrl());
   const prisma = new PrismaClient({ adapter });
   try {
-    await prisma.$executeRawUnsafe(`
-DO $$
-DECLARE
-  rec record;
-BEGIN
-  FOR rec IN
-    SELECT schemaname, tablename
-    FROM pg_tables
-    WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-      AND schemaname NOT LIKE 'pg_toast%'
-  LOOP
-    EXECUTE format(
-      'TRUNCATE TABLE %I.%I RESTART IDENTITY CASCADE',
-      rec.schemaname,
-      rec.tablename
+    await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
+    const rows = await prisma.$queryRawUnsafe<Array<{ table_name: string }>>(
+      `SELECT TABLE_NAME AS table_name
+       FROM information_schema.TABLES
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_TYPE = 'BASE TABLE'`,
     );
-  END LOOP;
-END $$;
-`);
-    console.log('All non-system schema tables truncated successfully.');
+    for (const { table_name: tableName } of rows) {
+      const safe = tableName.replace(/`/g, '``');
+      await prisma.$executeRawUnsafe(`TRUNCATE TABLE \`${safe}\``);
+    }
+    await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
+    console.log('All base tables truncated successfully.');
   } finally {
     await prisma.$disconnect();
-    await pool.end();
   }
 }
 

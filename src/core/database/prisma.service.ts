@@ -1,22 +1,16 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
-import { Pool } from 'pg';
 import { getDatabaseUrl } from './database-url';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleDestroy {
-  private readonly pool: Pool;
-
   constructor() {
-    const pool = new Pool({ connectionString: getDatabaseUrl() });
-    const adapter = new PrismaPg(pool);
+    const adapter = new PrismaMariaDb(getDatabaseUrl());
     super({ adapter });
-    this.pool = pool;
   }
 
   async onModuleDestroy(): Promise<void> {
     await this.$disconnect();
-    await this.pool.end();
   }
 }

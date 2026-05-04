@@ -4,25 +4,36 @@ networks:
     name: taxi-booking-network
 
 services:
-  postgres:
-    image: postgres:16-alpine
+  mysql:
+    image: mysql:8.4
     restart: unless-stopped
     networks:
       - taxi-booking-network
     environment:
-      POSTGRES_USER: ${DATABASE_USER:-taxi}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-taxi}
-      POSTGRES_DB: ${DATABASE_NAME:-taxi_booking}
+      MYSQL_DATABASE: ${DATABASE_NAME:-taxi_booking}
+      MYSQL_USER: ${DATABASE_USER:-taxi}
+      MYSQL_PASSWORD: ${DATABASE_PASSWORD:-taxi}
+      MYSQL_ROOT_PASSWORD: ${DATABASE_ROOT_PASSWORD:-taxi_root}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     ports:
-      - '${DATABASE_PORT:-5432}:5432'
+      - '${DATABASE_PORT:-3306}:3306'
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      test:
+        [
+          'CMD',
+          'mysqladmin',
+          'ping',
+          '-h',
+          '127.0.0.1',
+          '-uroot',
+          '-p$$MYSQL_ROOT_PASSWORD',
+        ]
       interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 10
+      start_period: 40s
 
   # api:
   #   build:
@@ -34,10 +45,10 @@ services:
   #   ports:
   #     - "${PORT:-3000}:${PORT:-3000}"
   #   depends_on:
-  #     postgres:
+  #     mysql:
   #       condition: service_healthy
   #   networks:
   #     - taxi-booking-network
 
 volumes:
-  postgres_data:
+  mysql_data:
