@@ -44,9 +44,9 @@ export class BookingsController {
   @ApiAccessTokenInSwagger()
   @Get()
   @ApiOperation({
-    summary: 'List bookings for the current account',
+    summary: 'List bookings',
     description:
-      'Passengers see their own bookings. Drivers see bookings assigned to them. Paginated with `page` (1-based) and `pageSize` (default 20, max 100). Optional `timeScope=past|current|upcoming`: **past** — completed/cancelled, newest completion first; **current** — `in_progress` only; **upcoming** — queued (not started), soonest trip first. Omit for all bookings (`createdAt` desc).',
+      'Returns bookings in dispatcher mode. Paginated with `page` (1-based) and `pageSize` (default 20, max 100). Optional `timeScope=past|current|upcoming`: **past** — completed/cancelled, newest completion first; **current** — `in_progress` only; **upcoming** — queued (not started), soonest trip first. Omit for all bookings (`createdAt` desc).',
   })
   @ApiOkResponse({
     schema: {
@@ -100,11 +100,25 @@ export class BookingsController {
   }
 
   @ApiAccessTokenInSwagger()
+  @Patch(':uuid/complete')
+  @ApiOperation({
+    summary: 'Complete reservation',
+    description:
+      'Marks reservation as completed and sets `completedAt` to now. Path uses booking `uuid`.',
+  })
+  completeReservation(
+    @Param('uuid', ParseUUIDPipe) uuid: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.bookingsService.completeReservation(uuid, user);
+  }
+
+  @ApiAccessTokenInSwagger()
   @Delete(':uuid')
   @ApiOperation({
     summary: 'Delete booking',
     description:
-      'Passengers only; only the booking owner may delete. Path uses booking `uuid`.',
+      'Deletes booking by `uuid`.',
   })
   @ApiOkResponse({
     schema: {
@@ -117,6 +131,19 @@ export class BookingsController {
     },
   })
   remove(
+    @Param('uuid', ParseUUIDPipe) uuid: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.bookingsService.remove(uuid, user);
+  }
+
+  @ApiAccessTokenInSwagger()
+  @Delete(':uuid/remove')
+  @ApiOperation({
+    summary: 'Remove reservation',
+    description: 'Alias route to delete reservation by booking `uuid`.',
+  })
+  removeReservation(
     @Param('uuid', ParseUUIDPipe) uuid: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {

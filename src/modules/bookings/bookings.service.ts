@@ -133,31 +133,6 @@ export class BookingsService {
     return rest;
   }
 
-  /**
-   * Drivers are set `isAvailable: false` when assigned. If a booking was deleted
-   * without restoring availability (older code, manual DB edits, etc.), auto-assign
-   * would skip them. Release any active driver who has zero bookings.
-   */
-  private async releaseIdleUnavailableDrivers(
-    tx: Prisma.TransactionClient,
-  ): Promise<void> {
-    const idle = await tx.driver.findMany({
-      where: {
-        isActive: true,
-        isAvailable: false,
-        bookings: { none: {} },
-      },
-      select: { id: true },
-    });
-    if (idle.length === 0) {
-      return;
-    }
-    await tx.driver.updateMany({
-      where: { id: { in: idle.map((d) => d.id) } },
-      data: { isAvailable: true },
-    });
-  }
-
   private assertCanViewBooking(
     booking: BookingWithRelations,
     requester: AuthenticatedUser,
@@ -171,11 +146,8 @@ export class BookingsService {
       }
       return;
     }
-    if (booking.driverId !== requester.sub) {
-      throw new ForbiddenException(
-        'You may only view bookings assigned to you',
-      );
-    }
+    // Driver app works in dispatcher mode now: drivers can view all bookings.
+    return;
   }
 
   private assertCanModifyBooking(
@@ -191,11 +163,8 @@ export class BookingsService {
       }
       return;
     }
-    if (booking.driverId !== requester.sub) {
-      throw new ForbiddenException(
-        'You may only update bookings assigned to you',
-      );
-    }
+    // Driver app works in dispatcher mode now: drivers can update all bookings.
+    return;
   }
 
   private assertCanDeleteBooking(
@@ -206,7 +175,8 @@ export class BookingsService {
       return;
     }
     if (requester.typ === 'driver') {
-      throw new ForbiddenException('Drivers cannot delete bookings');
+      // Driver app works in dispatcher mode now: drivers can remove reservations.
+      return;
     }
     if (booking.userId !== requester.sub) {
       throw new ForbiddenException('You may only delete your own bookings');
@@ -232,56 +202,8 @@ export class BookingsService {
       throw new NotFoundException(`User ${userId} not found`);
     }
 
-    const { created, assignmentMessage } = await this.prisma.$transaction(
+    const created = await this.prisma.$transaction(
       async (tx) => {
-        await this.releaseIdleUnavailableDrivers(tx);
-
-        let assignedDriver: {
-          id: string;
-          name: string | null;
-          email: string | null;
-        } | null = null;
-
-        if (dto.driverId) {
-          const driver = await tx.driver.findUnique({
-            where: { id: dto.driverId },
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              isActive: true,
-              isAvailable: true,
-            },
-          });
-          if (!driver) {
-            throw new NotFoundException(`Driver ${dto.driverId} not found`);
-          }
-          if (!driver.isActive) {
-            throw new BadRequestException(
-              `Driver ${dto.driverId} account is disabled`,
-            );
-          }
-          if (!driver.isAvailable) {
-            throw new BadRequestException(
-              `Driver ${dto.driverId} is not available right now`,
-            );
-          }
-          assignedDriver = {
-            id: driver.id,
-            name: driver.name,
-            email: driver.email,
-          };
-        } else {
-          const availableDriver = await tx.driver.findFirst({
-            where: { isActive: true, isAvailable: true },
-            orderBy: { name: 'asc' },
-            select: { id: true, name: true, email: true },
-          });
-          if (availableDriver) {
-            assignedDriver = availableDriver;
-          }
-        }
-
         const bookingReference = await this.allocateBookingReference(
           tx,
           dto.bookingReference,
@@ -290,7 +212,7 @@ export class BookingsService {
         const createdBooking = await tx.booking.create({
           data: {
             userId,
-            driverId: assignedDriver?.id,
+            driverId: undefined,
             bookingReference,
             customerName: dto.customerName,
             customerEmail: dto.customerEmail,
@@ -311,19 +233,7 @@ export class BookingsService {
           },
           include: bookingInclude,
         });
-
-        if (assignedDriver?.id) {
-          await tx.driver.update({
-            where: { id: assignedDriver.id },
-            data: { isAvailable: false },
-          });
-        }
-
-        const message = assignedDriver
-          ? `Driver ${assignedDriver.name ?? assignedDriver.email ?? assignedDriver.id} assigned successfully.`
-          : 'No drivers available yet. We will assign a driver soon.';
-
-        return { created: createdBooking, assignmentMessage: message };
+        return createdBooking;
       },
     );
 
@@ -338,19 +248,15 @@ export class BookingsService {
 
     return {
       ...this.toPublicBooking(persisted),
-      assignmentMessage,
+      assignmentMessage: 'Booking created successfully.',
     };
   }
 
   async findAll(
-    requester: AuthenticatedUser,
+    _requester: AuthenticatedUser,
     query: ListBookingsQueryDto,
   ): Promise<PaginatedBookings> {
-    const baseWhere: Prisma.BookingWhereInput = requester.is_admin
-      ? {}
-      : requester.typ === 'user'
-        ? { userId: requester.sub }
-        : { driverId: requester.sub };
+    const baseWhere: Prisma.BookingWhereInput = {};
 
     const terminalOr: Prisma.BookingWhereInput = {
       OR: [
@@ -654,6 +560,36 @@ export class BookingsService {
       return row;
     });
 
+    return this.toPublicBooking(updated);
+  }
+
+  async completeReservation(
+    uuid: string,
+    requester: AuthenticatedUser,
+  ): Promise<BookingPublic> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { uuid },
+      include: bookingInclude,
+    });
+    if (!booking) {
+      throw new NotFoundException(`Booking ${uuid} not found`);
+    }
+    this.assertCanModifyBooking(booking, requester);
+
+    const curLower = booking.status.toLowerCase();
+    if (
+      curLower === 'completed' ||
+      curLower === 'cancelled' ||
+      curLower === 'canceled'
+    ) {
+      throw new BadRequestException('Cannot complete a closed booking');
+    }
+
+    const updated = await this.prisma.booking.update({
+      where: { uuid },
+      data: { status: 'completed', completedAt: new Date() },
+      include: bookingInclude,
+    });
     return this.toPublicBooking(updated);
   }
 
