@@ -9,6 +9,7 @@ import {
 import { DriverVerificationAdminService } from './driver-verification-admin.service';
 import { PatchDriverVerificationCodeAdminDto } from './dto/patch-driver-verification-code-admin.dto';
 import { SetDriverVerificationCodeAdminDto } from './dto/set-driver-verification-code-admin.dto';
+import { UpdateDriverVerificationCodeByEmailAdminDto } from './dto/update-driver-verification-code-by-email-admin.dto';
 import { SuperAdminGuard } from './guards/super-admin.guard';
 
 @ApiTags('admin')
@@ -52,6 +53,24 @@ export class AdminDriverVerificationController {
     return this.driverVerificationAdmin.setActive(driverId, dto.isActive);
   }
 
+  @Patch('by-email')
+  @ApiOperation({
+    summary: 'Update driver verification code by driver email',
+    description:
+      'Super admin only. Updates code and/or active state for an existing driver code row.',
+  })
+  @ApiResponse({ status: 400, description: 'No update fields provided' })
+  @ApiResponse({ status: 403, description: 'Not a super admin' })
+  @ApiResponse({ status: 404, description: 'Driver email/code not found' })
+  @ApiResponse({ status: 409, description: 'Code already used by another driver' })
+  patchByEmail(@Body() dto: UpdateDriverVerificationCodeByEmailAdminDto) {
+    return this.driverVerificationAdmin.updateForDriverEmail({
+      driverEmail: dto.driverEmail,
+      code: dto.code,
+      isActive: dto.isActive,
+    });
+  }
+
   @Delete(':driverId')
   @ApiOperation({
     summary: 'Remove a driver verification code',
@@ -62,5 +81,17 @@ export class AdminDriverVerificationController {
   @ApiResponse({ status: 404, description: 'No code configured for driver' })
   remove(@Param('driverId') driverId: string) {
     return this.driverVerificationAdmin.remove(driverId);
+  }
+
+  @Delete('by-email/:driverEmail')
+  @ApiOperation({
+    summary: 'Remove a driver verification code by driver email',
+    description: 'Super admin only.',
+  })
+  @ApiParam({ name: 'driverEmail', description: 'Driver email' })
+  @ApiResponse({ status: 403, description: 'Not a super admin' })
+  @ApiResponse({ status: 404, description: 'Driver email/code not found' })
+  removeByEmail(@Param('driverEmail') driverEmail: string) {
+    return this.driverVerificationAdmin.removeByDriverEmail(driverEmail);
   }
 }

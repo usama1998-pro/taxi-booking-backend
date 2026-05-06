@@ -14,16 +14,8 @@ export class DriverVerificationAdminService {
     return raw.replace(/\D/g, '').slice(0, 4);
   }
 
-  async setForDriverEmail(input: {
-    driverEmail: string;
-    code: string;
-    isActive?: boolean;
-  }) {
-    const email = input.driverEmail.trim().toLowerCase();
-    const code = this.normalizeCode(input.code);
-    if (!/^\d{4}$/.test(code)) {
-      throw new BadRequestException('Code must be exactly 4 digits');
-    }
+  private async findDriverByEmail(driverEmail: string) {
+    const email = driverEmail.trim().toLowerCase();
     const driver = await this.prisma.driver.findUnique({
       where: { email },
       select: { id: true, email: true, name: true },
@@ -31,6 +23,19 @@ export class DriverVerificationAdminService {
     if (!driver) {
       throw new NotFoundException('Driver not found for that email');
     }
+    return driver;
+  }
+
+  async setForDriverEmail(input: {
+    driverEmail: string;
+    code: string;
+    isActive?: boolean;
+  }) {
+    const code = this.normalizeCode(input.code);
+    if (!/^\d{4}$/.test(code)) {
+      throw new BadRequestException('Code must be exactly 4 digits');
+    }
+    const driver = await this.findDriverByEmail(input.driverEmail);
     const taken = await this.prisma.driverVerificationCode.findUnique({
       where: { code },
       select: { driverId: true },
@@ -48,6 +53,59 @@ export class DriverVerificationAdminService {
     });
     return {
       driverId: driver.id,
+      driverEmail: driver.email,
+      driverName: driver.name,
+      code: row.code,
+      isActive: row.isActive,
+    };
+  }
+
+  async updateForDriverEmail(input: {
+    driverEmail: string;
+    code?: string;
+    isActive?: boolean;
+  }) {
+    const driver = await this.findDriverByEmail(input.driverEmail);
+    const existing = await this.prisma.driverVerificationCode.findUnique({
+      where: { driverId: driver.id },
+      select: { driverId: true },
+    });
+    if (!existing) {
+      throw new NotFoundException(
+        'No verification code configured for this driver',
+      );
+    }
+
+    const nextCode =
+      input.code !== undefined ? this.normalizeCode(input.code) : undefined;
+    if (nextCode !== undefined && !/^\d{4}$/.test(nextCode)) {
+      throw new BadRequestException('Code must be exactly 4 digits');
+    }
+    if (nextCode === undefined && input.isActive === undefined) {
+      throw new BadRequestException('Provide code and/or isActive to update');
+    }
+    if (nextCode !== undefined) {
+      const taken = await this.prisma.driverVerificationCode.findUnique({
+        where: { code: nextCode },
+        select: { driverId: true },
+      });
+      if (taken && taken.driverId !== driver.id) {
+        throw new ConflictException(
+          'That code is already assigned to another driver',
+        );
+      }
+    }
+
+    const row = await this.prisma.driverVerificationCode.update({
+      where: { driverId: driver.id },
+      data: {
+        ...(nextCode !== undefined ? { code: nextCode } : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+      },
+      select: { driverId: true, code: true, isActive: true },
+    });
+    return {
+      driverId: row.driverId,
       driverEmail: driver.email,
       driverName: driver.name,
       code: row.code,
@@ -81,5 +139,10 @@ export class DriverVerificationAdminService {
       );
     }
     return { deleted: true as const };
+  }
+
+  async removeByDriverEmail(driverEmail: string) {
+    const driver = await this.findDriverByEmail(driverEmail);
+    return this.remove(driver.id);
   }
 }
