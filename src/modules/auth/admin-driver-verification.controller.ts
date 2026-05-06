@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Param, Patch, Post } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -10,12 +10,10 @@ import { DriverVerificationAdminService } from './driver-verification-admin.serv
 import { PatchDriverVerificationCodeAdminDto } from './dto/patch-driver-verification-code-admin.dto';
 import { SetDriverVerificationCodeAdminDto } from './dto/set-driver-verification-code-admin.dto';
 import { UpdateDriverVerificationCodeByEmailAdminDto } from './dto/update-driver-verification-code-by-email-admin.dto';
-import { SuperAdminGuard } from './guards/super-admin.guard';
 
 @ApiTags('admin')
 @ApiBearerAuth('access-token')
 @Controller('admin/driver-verification-codes')
-@UseGuards(SuperAdminGuard)
 export class AdminDriverVerificationController {
   constructor(
     private readonly driverVerificationAdmin: DriverVerificationAdminService,
@@ -25,9 +23,8 @@ export class AdminDriverVerificationController {
   @ApiOperation({
     summary: 'Set or replace a driver verification code',
     description:
-      'Super admin only. Upserts the 4-digit code for the driver identified by email.',
+      'Authenticated access. Upserts the 4-digit code for the driver identified by email.',
   })
-  @ApiResponse({ status: 403, description: 'Not a super admin' })
   @ApiResponse({ status: 404, description: 'Driver email not found' })
   @ApiResponse({ status: 409, description: 'Code already used by another driver' })
   set(@Body() dto: SetDriverVerificationCodeAdminDto) {
@@ -41,10 +38,9 @@ export class AdminDriverVerificationController {
   @Patch(':driverId')
   @ApiOperation({
     summary: 'Enable or disable an existing driver verification code',
-    description: 'Super admin only.',
+    description: 'Authenticated access.',
   })
   @ApiParam({ name: 'driverId', description: 'Driver UUID' })
-  @ApiResponse({ status: 403, description: 'Not a super admin' })
   @ApiResponse({ status: 404, description: 'No code configured for driver' })
   patch(
     @Param('driverId') driverId: string,
@@ -57,10 +53,9 @@ export class AdminDriverVerificationController {
   @ApiOperation({
     summary: 'Update driver verification code by driver email',
     description:
-      'Super admin only. Updates code and/or active state for an existing driver code row.',
+      'Authenticated access. Updates code and/or active state for an existing driver code row.',
   })
   @ApiResponse({ status: 400, description: 'No update fields provided' })
-  @ApiResponse({ status: 403, description: 'Not a super admin' })
   @ApiResponse({ status: 404, description: 'Driver email/code not found' })
   @ApiResponse({ status: 409, description: 'Code already used by another driver' })
   patchByEmail(@Body() dto: UpdateDriverVerificationCodeByEmailAdminDto) {
@@ -74,10 +69,9 @@ export class AdminDriverVerificationController {
   @Delete(':driverId')
   @ApiOperation({
     summary: 'Remove a driver verification code',
-    description: 'Super admin only.',
+    description: 'Authenticated access.',
   })
   @ApiParam({ name: 'driverId', description: 'Driver UUID' })
-  @ApiResponse({ status: 403, description: 'Not a super admin' })
   @ApiResponse({ status: 404, description: 'No code configured for driver' })
   remove(@Param('driverId') driverId: string) {
     return this.driverVerificationAdmin.remove(driverId);
@@ -86,10 +80,9 @@ export class AdminDriverVerificationController {
   @Delete('by-email/:driverEmail')
   @ApiOperation({
     summary: 'Remove a driver verification code by driver email',
-    description: 'Super admin only.',
+    description: 'Authenticated access.',
   })
   @ApiParam({ name: 'driverEmail', description: 'Driver email' })
-  @ApiResponse({ status: 403, description: 'Not a super admin' })
   @ApiResponse({ status: 404, description: 'Driver email/code not found' })
   removeByEmail(@Param('driverEmail') driverEmail: string) {
     return this.driverVerificationAdmin.removeByDriverEmail(driverEmail);
