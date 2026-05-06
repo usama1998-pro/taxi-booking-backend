@@ -2,7 +2,7 @@
  * Sets `is_super_admin` on an existing staff user (`is_admin` must already be true).
  * Run from `backend`: `npm run promote-super-admin`
  */
-import 'dotenv/config';
+import '../src/bootstrap-env';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
 import * as readline from 'node:readline/promises';

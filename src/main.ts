@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './bootstrap-env';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
@@ -6,6 +6,7 @@ import { getSwaggerPath, setupSwagger } from './core/swagger/setup-swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
   // Reflects the request `Origin` — any website can call this API from the browser.
   // (Using `origin: '*'` would break `credentials: true`.)
   app.enableCors({
@@ -32,6 +33,7 @@ async function bootstrap() {
   const base =
     process.env.APP_URL?.replace(/\/$/, '') ?? `http://localhost:${port}`;
   const docsPath = getSwaggerPath();
+  Logger.log(`Process timezone: ${process.env.TZ}`, 'Bootstrap');
   Logger.log(`Listening on http://${host}:${port}`, 'Bootstrap');
   Logger.log(`Backend (e.g. browser): ${base}`, 'Bootstrap');
   Logger.log(`Swagger: ${base}/${docsPath}`, 'Bootstrap');

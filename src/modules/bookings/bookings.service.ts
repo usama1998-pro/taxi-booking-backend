@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { hashPassword } from '../../common/utils/password.util';
 import { PrismaService } from '../../core/database/prisma.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { getBookingListScheduledDayBounds } from './booking-list-scheduled-bounds';
 import { calculateBookingPrice } from './booking-pricing';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import {
@@ -279,24 +280,29 @@ export class BookingsService {
         { createdAt: 'desc' },
       ];
     } else if (query.timeScope === BookingTimeScope.Current) {
-      /** Active trip: driver started the ride (`in_progress`). */
-      where = {
-        AND: [
-          baseWhere,
-          notTerminal,
-          { status: 'in_progress' },
-        ],
-      };
-      orderBy = { createdAt: 'desc' };
-    } else if (query.timeScope === BookingTimeScope.Upcoming) {
-      /** Queue: not terminal and not yet started (e.g. pending, assigned). */
+      /** Open bookings whose pickup is scheduled on today's calendar date (server `TZ`). */
+      const { startOfToday, startOfTomorrow } = getBookingListScheduledDayBounds();
       where = {
         AND: [
           baseWhere,
           notTerminal,
           {
-            NOT: { status: 'in_progress' },
+            scheduledTime: {
+              gte: startOfToday,
+              lt: startOfTomorrow,
+            },
           },
+        ],
+      };
+      orderBy = { scheduledTime: 'asc' };
+    } else if (query.timeScope === BookingTimeScope.Upcoming) {
+      /** Open bookings from tomorrow onward (local TZ). */
+      const { startOfTomorrow } = getBookingListScheduledDayBounds();
+      where = {
+        AND: [
+          baseWhere,
+          notTerminal,
+          { scheduledTime: { gte: startOfTomorrow } },
         ],
       };
       orderBy = { scheduledTime: 'asc' };

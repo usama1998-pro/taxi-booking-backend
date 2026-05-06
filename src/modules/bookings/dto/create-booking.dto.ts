@@ -73,6 +73,7 @@ export class CreateBookingDto {
   @ApiProperty({ example: 2 })
   @IsInt()
   @Min(1)
+  @Max(20)
   passengerCount!: number;
 
   @ApiPropertyOptional({ example: 0, description: 'Infant carrier (0–6 months)' })

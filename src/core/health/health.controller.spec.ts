@@ -1,24 +1,24 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { DatabaseService } from '../database/database.service';
+import { PrismaService } from '../database/prisma.service';
 import { HealthController } from './health.controller';
 
 describe('HealthController', () => {
   let controller: HealthController;
-  let database: { ping: jest.Mock };
+  let prisma: { ping: jest.Mock };
 
   beforeEach(async () => {
-    database = { ping: jest.fn() };
+    prisma = { ping: jest.fn() };
     const module: TestingModule = await Test.createTestingModule({
       controllers: [HealthController],
-      providers: [{ provide: DatabaseService, useValue: database }],
+      providers: [{ provide: PrismaService, useValue: prisma }],
     }).compile();
 
     controller = module.get(HealthController);
   });
 
   it('returns ok when database ping succeeds', async () => {
-    database.ping.mockResolvedValue(undefined);
+    prisma.ping.mockResolvedValue(undefined);
     await expect(controller.checkDatabase()).resolves.toEqual({
       status: 'ok',
       database: { status: 'up' },
@@ -26,7 +26,7 @@ describe('HealthController', () => {
   });
 
   it('throws ServiceUnavailableException when database ping fails', async () => {
-    database.ping.mockRejectedValue(new Error('connect ECONNREFUSED'));
+    prisma.ping.mockRejectedValue(new Error('connect ECONNREFUSED'));
     await expect(controller.checkDatabase()).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );

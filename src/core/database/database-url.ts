@@ -161,28 +161,16 @@ export function getDatabaseUrl(): string {
 }
 
 /**
- * Connection string for `mariadb.createPool()` / the native connector (requires `mariadb://`, not `mysql://`).
+ * Connection string for the native `mariadb` connector (requires `mariadb://`, not `mysql://`).
  */
 export function getMariaDbDriverUrl(): string {
   return getDatabaseUrl().replace(/^mysql:\/\//i, 'mariadb://');
 }
 
 /**
- * Options for `mariadb.createPool()` (health check). Uses a plain URL, or a parsed config when
- * `DATABASE_SSL=1` and `DATABASE_SSL_REJECT_UNAUTHORIZED=0` (TLS without cert verification).
+ * Prisma MariaDB adapter config. When `DATABASE_SSL=1` and `DATABASE_SSL_REJECT_UNAUTHORIZED=0`,
+ * uses a parsed pool config with TLS without cert verification.
  */
-export function getMariaDbPoolCreateArg(): string | PoolConfig {
-  const url = getMariaDbDriverUrl();
-  if (!useInsecureTls()) {
-    return url;
-  }
-  return {
-    ...parseMariadbUrlToPoolConfig(url),
-    ssl: { rejectUnauthorized: false },
-  };
-}
-
-/** Same semantics as {@link getMariaDbPoolCreateArg}; uses Prisma adapter's `mariadb` types (nested dep). */
 export function getPrismaMariaDbAdapterConfig(): ConstructorParameters<typeof PrismaMariaDb>[0] {
   if (!useInsecureTls()) {
     return getDatabaseUrl();

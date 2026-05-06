@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import '../src/bootstrap-env';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
 import * as readline from 'node:readline/promises';

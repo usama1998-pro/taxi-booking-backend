@@ -6,13 +6,13 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Public } from '../../modules/auth/decorators/public.decorator';
-import { DatabaseService } from '../database/database.service';
+import { PrismaService } from '../database/prisma.service';
 
 @Public()
 @ApiTags('health')
 @Controller('health')
 export class HealthController {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   @Get('db')
   @ApiOperation({ summary: 'MySQL / MariaDB connectivity check' })
@@ -37,7 +37,7 @@ export class HealthController {
     database: { status: string };
   }> {
     try {
-      await this.database.ping();
+      await this.prisma.ping();
       return { status: 'ok', database: { status: 'up' } };
     } catch (error) {
       const message =

@@ -50,12 +50,18 @@ function formatEndpoint(
   return [a, f].filter(Boolean).join(' · ');
 }
 
+const pdfTimeZone = process.env.TZ || 'Europe/Madrid';
+
 function pickupDateLabel(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) {
     return iso;
   }
-  return d.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  return d.toLocaleString('en-GB', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: pdfTimeZone,
+  });
 }
 
 function createdLabel(iso: string): string {
@@ -63,7 +69,7 @@ function createdLabel(iso: string): string {
   if (Number.isNaN(d.getTime())) {
     return iso;
   }
-  return d.toLocaleString('en-GB');
+  return d.toLocaleString('en-GB', { timeZone: pdfTimeZone });
 }
 
 /** Renders a simple A4 invoice PDF (Helvetica, en-GB money). */

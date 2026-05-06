@@ -4,7 +4,7 @@
  * Usage:
  *   FLUSH_ALL_CONFIRM=YES_FLUSH npm run db:flush
  */
-import 'dotenv/config';
+import '../src/bootstrap-env';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
 import { getPrismaMariaDbAdapterConfig } from '../src/core/database/database-url';

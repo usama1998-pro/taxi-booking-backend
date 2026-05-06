@@ -1,6 +1,8 @@
 /**
  * E2E runs without loading `.env`; align with `.env.example` so core services resolve a URL.
  */
+process.env.TZ ??= 'Europe/Madrid';
+
 process.env.DATABASE_USER ??= 'taxi';
 process.env.DATABASE_PASSWORD ??= 'taxi';
 process.env.DATABASE_NAME ??= 'taxi_booking';

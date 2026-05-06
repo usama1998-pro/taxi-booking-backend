@@ -4,7 +4,7 @@
  * Run from `backend`: `npm run create-admin`
  * Requires the same database env vars as the API (e.g. DATABASE_URL).
  */
-import 'dotenv/config';
+import '../src/bootstrap-env';
 import * as bcrypt from 'bcrypt';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
