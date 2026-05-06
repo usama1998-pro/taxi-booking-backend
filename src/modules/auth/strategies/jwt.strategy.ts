@@ -75,6 +75,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (tv === null) {
       throw new UnauthorizedException('Invalid token');
     }
+    let staffIsSuperAdmin: boolean | undefined;
     if (payload.typ === 'driver') {
       if (payload.is_admin) {
         throw new UnauthorizedException();
@@ -95,16 +96,26 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (payload.typ === 'user') {
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
-        select: { isAdmin: true, tokenVersion: true },
+        select: { isAdmin: true, isSuperAdmin: true, tokenVersion: true },
       });
       if (!user?.isAdmin || !payload.is_admin) {
         throw new UnauthorizedException('Admin account not found');
+      }
+      const payloadSuper = (payload as { is_super_admin?: unknown }).is_super_admin;
+      if (
+        typeof payloadSuper === 'boolean' &&
+        payloadSuper !== user.isSuperAdmin
+      ) {
+        throw new UnauthorizedException(
+          'Token is no longer valid; sign in again',
+        );
       }
       if (user.tokenVersion !== tv) {
         throw new UnauthorizedException(
           'Token is no longer valid; sign in again',
         );
       }
+      staffIsSuperAdmin = user.isSuperAdmin;
     }
     const exp = payload.exp;
     if (typeof exp !== 'number') {
@@ -113,7 +124,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     const nowSec = Math.floor(Date.now() / 1000);
     const expires_in = Math.max(0, exp - nowSec);
     const expires_at = new Date(exp * 1000).toISOString();
-    return {
+    const base = {
       sub: payload.sub,
       email: payload.email,
       typ: payload.typ,
@@ -125,5 +136,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       expires_in,
       expires_at,
     };
+    if (payload.typ === 'user') {
+      return {
+        ...base,
+        is_super_admin: staffIsSuperAdmin ?? false,
+      };
+    }
+    return base;
   }
 }

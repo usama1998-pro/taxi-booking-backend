@@ -25,6 +25,8 @@
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f api",
     "create-admin": "ts-node scripts/create-admin.ts",
+    "promote-super-admin": "ts-node scripts/promote-super-admin.ts",
+    "set-driver-code": "ts-node scripts/set-driver-verification-code.ts",
     "db:flush": "ts-node scripts/flush-db.ts"
   },
   "dependencies": {

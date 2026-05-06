@@ -10,6 +10,7 @@ import { Prisma } from '@prisma/client';
 import { hashPassword } from '../../common/utils/password.util';
 import { PrismaService } from '../../core/database/prisma.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import { calculateBookingPrice } from './booking-pricing';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import {
   BookingTimeScope,
@@ -215,6 +216,16 @@ export class BookingsService {
   async create(dto: CreateBookingDto): Promise<BookingCreateResult> {
     const userId =
       dto.userId ?? (await this.resolveOrCreatePublicBookingUserId(dto));
+    const infantCarrierCount = dto.infantCarrierCount ?? 0;
+    const childSeatCount = dto.childSeatCount ?? 0;
+    const boosterCount = dto.boosterCount ?? 0;
+    const computedPrice = calculateBookingPrice({
+      passengerCount: dto.passengerCount,
+      luggageCount: dto.luggageCount,
+      infantCarrierCount,
+      childSeatCount,
+      boosterCount,
+    });
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
@@ -289,13 +300,13 @@ export class BookingsService {
             pickupLocation: dto.pickupLocation as Prisma.InputJsonValue,
             dropoffLocation: dto.dropoffLocation as Prisma.InputJsonValue,
             scheduledTime: new Date(dto.scheduledTime),
-            price: dto.price,
+            price: computedPrice,
             status: dto.status,
             luggageCount: dto.luggageCount,
             passengerCount: dto.passengerCount,
-            infantCarrierCount: dto.infantCarrierCount ?? 0,
-            childSeatCount: dto.childSeatCount ?? 0,
-            boosterCount: dto.boosterCount ?? 0,
+            infantCarrierCount,
+            childSeatCount,
+            boosterCount,
             note: dto.note,
           },
           include: bookingInclude,
@@ -492,8 +503,30 @@ export class BookingsService {
     if (d.scheduledTime !== undefined) {
       data.scheduledTime = new Date(d.scheduledTime);
     }
+    const nextPassengerCount = d.passengerCount ?? booking.passengerCount;
+    const nextLuggageCount = d.luggageCount ?? booking.luggageCount;
+    const nextInfantCarrierCount =
+      d.infantCarrierCount ?? booking.infantCarrierCount;
+    const nextChildSeatCount = d.childSeatCount ?? booking.childSeatCount;
+    const nextBoosterCount = d.boosterCount ?? booking.boosterCount;
+
+    const seatsOrTripCountsChanged =
+      d.passengerCount !== undefined ||
+      d.luggageCount !== undefined ||
+      d.infantCarrierCount !== undefined ||
+      d.childSeatCount !== undefined ||
+      d.boosterCount !== undefined;
+
     if (d.price !== undefined) {
       data.price = d.price;
+    } else if (seatsOrTripCountsChanged) {
+      data.price = calculateBookingPrice({
+        passengerCount: nextPassengerCount,
+        luggageCount: nextLuggageCount,
+        infantCarrierCount: nextInfantCarrierCount,
+        childSeatCount: nextChildSeatCount,
+        boosterCount: nextBoosterCount,
+      });
     }
     if (d.status !== undefined) {
       const nextRaw = String(d.status).trim();

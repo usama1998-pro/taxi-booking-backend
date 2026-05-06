@@ -11,11 +11,25 @@ import { AuthService } from './auth.service';
 import { Public } from './decorators/public.decorator';
 import { LoginResponseDto, SigninDto, SignoutResponseDto } from './dto/signin.dto';
 import { SignupDto } from './dto/signup.dto';
+import { VerifyCodeDto } from './dto/verify-code.dto';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Public()
+  @Post('verify-code')
+  @ApiOperation({
+    summary: 'Verify a 4-digit driver code',
+    description:
+      'Validates a backend-assigned 4-digit code and returns an access token for the matching active driver account.',
+  })
+  @ApiOkResponse({ type: LoginResponseDto })
+  @ApiResponse({ status: 401, description: 'Invalid code or disabled driver account' })
+  verifyCode(@Body() dto: VerifyCodeDto) {
+    return this.authService.verifyCode(dto);
+  }
 
   @Public()
   @Post('signin')

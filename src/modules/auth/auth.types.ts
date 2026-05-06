@@ -8,6 +8,8 @@ export interface JwtPayload {
   typ: JwtPrincipalKind;
   /** Always `false` for drivers. Staff logins use `User` rows with `isAdmin` in the database. */
   is_admin: boolean;
+  /** Present on staff (`typ: user`) JWTs from sign-in. Omitted for drivers. */
+  is_super_admin?: boolean;
   /** Matches `User.tokenVersion` / `Driver.tokenVersion`; incremented on each signin to invalidate older JWTs. */
   tv?: number;
   /** Session id for server-side signout (revocation) until `exp` (new tokens only). */
@@ -20,6 +22,8 @@ export interface JwtPayload {
 export type AuthenticatedUser = JwtPayload & {
   expires_in: number;
   expires_at: string;
+  /** Set from DB for staff users in JwtStrategy; omitted or false for drivers. */
+  is_super_admin?: boolean;
 };
 
 export interface LoginResponse {

@@ -1,5 +1,6 @@
 /**
  * Creates a staff `User` with `is_admin` so they can call POST /auth/signin (after drivers are ruled out by email).
+ * Optionally sets `is_super_admin` for managing driver verification codes via `/admin/driver-verification-codes`.
  * Run from `backend`: `npm run create-admin`
  * Requires the same database env vars as the API (e.g. DATABASE_URL).
  */
@@ -26,6 +27,12 @@ async function main(): Promise<void> {
     const phone = (await rl.question('Phone: ')).trim();
     const password = (await rl.question('Password (min 8 chars): ')).trim();
     const password2 = (await rl.question('Password (again): ')).trim();
+    const superRaw = (
+      await rl.question('Super admin? (y/N — super admins manage driver verification codes): ')
+    )
+      .trim()
+      .toLowerCase();
+    const isSuperAdmin = superRaw === 'y' || superRaw === 'yes';
 
     if (!fullName || !email || !phone || !password) {
       console.error('All fields are required.');
@@ -60,9 +67,12 @@ async function main(): Promise<void> {
         phone,
         password: hash,
         isAdmin: true,
+        isSuperAdmin,
       },
     });
-    console.log(`Admin user created: ${user.id} (${user.email}).`);
+    console.log(
+      `Admin user created: ${user.id} (${user.email})${isSuperAdmin ? ' [super admin]' : ''}.`,
+    );
   } catch (e) {
     console.error(e);
     process.exitCode = 1;

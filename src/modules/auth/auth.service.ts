@@ -15,6 +15,7 @@ import type {
 } from './auth.types';
 import { SigninDto } from './dto/signin.dto';
 import { SignupDto } from './dto/signup.dto';
+import { VerifyCodeDto } from './dto/verify-code.dto';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { TokenRevocationService } from './token-revocation.service';
 
@@ -96,6 +97,41 @@ export class AuthService {
       email: user.email,
       typ: 'user',
       is_admin: true,
+      is_super_admin: user.isSuperAdmin,
+      tv: tokenVersion,
+    });
+  }
+
+  async verifyCode(dto: VerifyCodeDto): Promise<LoginResponse> {
+    const code = dto.code.trim();
+    const match = await this.prisma.driverVerificationCode.findUnique({
+      where: { code },
+      include: {
+        driver: {
+          select: {
+            id: true,
+            email: true,
+            isActive: true,
+          },
+        },
+      },
+    });
+    if (!match || !match.isActive) {
+      throw new UnauthorizedException('Invalid verification code');
+    }
+    if (!match.driver.isActive) {
+      throw new UnauthorizedException('Driver account is disabled');
+    }
+    const { tokenVersion } = await this.prisma.driver.update({
+      where: { id: match.driver.id },
+      data: { tokenVersion: { increment: 1 } },
+      select: { tokenVersion: true },
+    });
+    return this.signAccessToken({
+      sub: match.driver.id,
+      email: match.driver.email,
+      typ: 'driver',
+      is_admin: false,
       tv: tokenVersion,
     });
   }
