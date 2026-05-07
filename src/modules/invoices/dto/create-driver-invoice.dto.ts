@@ -39,7 +39,9 @@ export class CreateDriverInvoiceDto {
   @IsEnum(InvoiceAddressKind)
   pickupKind!: InvoiceAddressKind;
 
-  @ApiPropertyOptional({ description: 'Required when pickupKind is LOCATION' })
+  @ApiPropertyOptional({
+    description: 'When pickupKind is LOCATION: optional street / meeting point.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(500)
@@ -54,7 +56,7 @@ export class CreateDriverInvoiceDto {
   pickupAirline?: string;
 
   @ApiPropertyOptional({
-    description: 'When pickupKind is AIRPORT: required flight number.',
+    description: 'When pickupKind is AIRPORT: optional flight number.',
   })
   @IsOptional()
   @IsString()
@@ -65,7 +67,9 @@ export class CreateDriverInvoiceDto {
   @IsEnum(InvoiceAddressKind)
   dropoffKind!: InvoiceAddressKind;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'When dropoffKind is LOCATION: optional street / meeting point.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(500)
@@ -80,7 +84,7 @@ export class CreateDriverInvoiceDto {
   dropoffAirline?: string;
 
   @ApiPropertyOptional({
-    description: 'When dropoffKind is AIRPORT: required flight number.',
+    description: 'When dropoffKind is AIRPORT: optional flight number.',
   })
   @IsOptional()
   @IsString()
@@ -88,7 +92,8 @@ export class CreateDriverInvoiceDto {
   dropoffFlightNo?: string;
 
   @ApiProperty({
-    description: 'Subtotal before tax (GBP). Server applies 10% tax.',
+    description:
+      'Gross subtotal (GBP). Tax is always 10%; `totalAmount` is subtotal minus that tax (e.g. 100 → 90).',
     example: 45.0,
   })
   @Type(() => Number)

@@ -60,7 +60,7 @@ export class DriverInvoicesController {
   @ApiOperation({
     summary: 'Create invoice',
     description:
-      'Stores subtotal in `priceAmount`; tax is 10% and `totalAmount` is computed server-side.',
+      'Stores gross amount in `priceAmount`. Tax is always 10%; `totalAmount` is computed server-side (subtotal minus tax).',
   })
   create(
     @CurrentUser() user: AuthenticatedUser,

@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InvoiceAddressKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/database/prisma.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
@@ -11,6 +6,7 @@ import { CreateDriverInvoiceDto } from './dto/create-driver-invoice.dto';
 import { ListDriverInvoicesQueryDto } from './dto/list-driver-invoices-query.dto';
 import { buildDriverInvoicePdf } from './invoice-pdf.builder';
 
+/** Fixed 10% tax on gross subtotal (`totalAmount` = subtotal − tax). */
 const TAX_RATE = new Prisma.Decimal('0.10');
 
 function assertDriver(user: AuthenticatedUser): void {
@@ -38,26 +34,6 @@ function formatChildSeatsLine(
     parts.push(`${booster} booster${booster === 1 ? '' : 's'}`);
   }
   return parts.join(', ');
-}
-
-function assertAddressFields(
-  label: string,
-  kind: InvoiceAddressKind,
-  address: string | undefined,
-  airline: string | undefined,
-  flightNo: string | undefined,
-): void {
-  if (kind === InvoiceAddressKind.LOCATION) {
-    if (!address?.trim()) {
-      throw new BadRequestException(`${label}: address is required for Location`);
-    }
-  } else {
-    if (!flightNo?.trim()) {
-      throw new BadRequestException(
-        `${label}: flight number is required for Airport (airline name is optional)`,
-      );
-    }
-  }
 }
 
 function toMoneyResponse(d: Prisma.Decimal): number {
@@ -141,20 +117,6 @@ export class DriverInvoicesService {
 
   async create(user: AuthenticatedUser, dto: CreateDriverInvoiceDto) {
     assertDriver(user);
-    assertAddressFields(
-      'Pick-up',
-      dto.pickupKind,
-      dto.pickupAddress,
-      dto.pickupAirline,
-      dto.pickupFlightNo,
-    );
-    assertAddressFields(
-      'Drop-off',
-      dto.dropoffKind,
-      dto.dropoffAddress,
-      dto.dropoffAirline,
-      dto.dropoffFlightNo,
-    );
 
     const linkedBooking = await this.prisma.booking.findFirst({
       where: {
@@ -184,7 +146,7 @@ export class DriverInvoicesService {
 
     const priceAmount = new Prisma.Decimal(dto.priceAmount).toDP(2);
     const taxAmount = priceAmount.mul(TAX_RATE).toDP(2);
-    const totalAmount = priceAmount.add(taxAmount).toDP(2);
+    const totalAmount = priceAmount.sub(taxAmount).toDP(2);
 
     const row = await this.prisma.driverInvoice.create({
       data: {
@@ -198,14 +160,14 @@ export class DriverInvoicesService {
         pickupAirline:
           dto.pickupKind === 'AIRPORT' ? dto.pickupAirline?.trim() || null : null,
         pickupFlightNo:
-          dto.pickupKind === 'AIRPORT' ? dto.pickupFlightNo!.trim() : null,
+          dto.pickupKind === 'AIRPORT' ? dto.pickupFlightNo?.trim() || null : null,
         dropoffKind: dto.dropoffKind,
         dropoffAddress:
-          dto.dropoffKind === 'LOCATION' ? dto.dropoffAddress!.trim() : null,
+          dto.dropoffKind === 'LOCATION' ? dto.dropoffAddress?.trim() || null : null,
         dropoffAirline:
           dto.dropoffKind === 'AIRPORT' ? dto.dropoffAirline?.trim() || null : null,
         dropoffFlightNo:
-          dto.dropoffKind === 'AIRPORT' ? dto.dropoffFlightNo!.trim() : null,
+          dto.dropoffKind === 'AIRPORT' ? dto.dropoffFlightNo?.trim() || null : null,
         priceAmount,
         taxRate: TAX_RATE,
         taxAmount,
