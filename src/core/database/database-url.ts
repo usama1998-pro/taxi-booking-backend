@@ -103,15 +103,19 @@ export function applyEnvMysqlDriverQueryParams(url: string): string {
 
 /**
  * Compose service hostname `mysql` only resolves on the Docker network.
- * Nest on the host (Windows/macOS/Linux) must use `localhost` + the published host port.
+ * Nest on the host (Windows/macOS/Linux) must use local loopback + the published host port.
  */
 function resolvedDatabaseHost(configured: string | undefined): string {
   const host = (configured ?? 'localhost').trim() || 'localhost';
+  if (process.platform === 'win32' && host === 'localhost') {
+    // On some Windows setups `localhost` resolves to `::1`; force IPv4 loopback for MariaDB.
+    return '127.0.0.1';
+  }
   if (host !== 'mysql') {
     return host;
   }
   if (process.platform === 'win32') {
-    return 'localhost';
+    return '127.0.0.1';
   }
   try {
     if (fs.existsSync('/.dockerenv')) {
