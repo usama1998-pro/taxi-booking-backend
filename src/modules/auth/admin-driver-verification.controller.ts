@@ -35,20 +35,7 @@ export class AdminDriverVerificationController {
     });
   }
 
-  @Patch(':driverId')
-  @ApiOperation({
-    summary: 'Enable or disable an existing driver verification code',
-    description: 'Authenticated access.',
-  })
-  @ApiParam({ name: 'driverId', description: 'Driver UUID' })
-  @ApiResponse({ status: 404, description: 'No code configured for driver' })
-  patch(
-    @Param('driverId') driverId: string,
-    @Body() dto: PatchDriverVerificationCodeAdminDto,
-  ) {
-    return this.driverVerificationAdmin.setActive(driverId, dto.isActive);
-  }
-
+  /** Static path must be registered before `@Patch(':driverId')` or `by-email` is captured as a UUID param and the wrong DTO runs. */
   @Patch('by-email')
   @ApiOperation({
     summary: 'Update driver verification code by driver email',
@@ -66,15 +53,18 @@ export class AdminDriverVerificationController {
     });
   }
 
-  @Delete(':driverId')
+  @Patch(':driverId')
   @ApiOperation({
-    summary: 'Remove a driver verification code',
+    summary: 'Enable or disable an existing driver verification code',
     description: 'Authenticated access.',
   })
   @ApiParam({ name: 'driverId', description: 'Driver UUID' })
   @ApiResponse({ status: 404, description: 'No code configured for driver' })
-  remove(@Param('driverId') driverId: string) {
-    return this.driverVerificationAdmin.remove(driverId);
+  patch(
+    @Param('driverId') driverId: string,
+    @Body() dto: PatchDriverVerificationCodeAdminDto,
+  ) {
+    return this.driverVerificationAdmin.setActive(driverId, dto.isActive);
   }
 
   @Delete('by-email/:driverEmail')
@@ -86,5 +76,16 @@ export class AdminDriverVerificationController {
   @ApiResponse({ status: 404, description: 'Driver email/code not found' })
   removeByEmail(@Param('driverEmail') driverEmail: string) {
     return this.driverVerificationAdmin.removeByDriverEmail(driverEmail);
+  }
+
+  @Delete(':driverId')
+  @ApiOperation({
+    summary: 'Remove a driver verification code',
+    description: 'Authenticated access.',
+  })
+  @ApiParam({ name: 'driverId', description: 'Driver UUID' })
+  @ApiResponse({ status: 404, description: 'No code configured for driver' })
+  remove(@Param('driverId') driverId: string) {
+    return this.driverVerificationAdmin.remove(driverId);
   }
 }
