@@ -3,6 +3,8 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import type { SignOptions } from 'jsonwebtoken';
+import { AdminDriverUserLinkController } from './admin-driver-user-link.controller';
+import { AdminDriverUserLinkService } from './admin-driver-user-link.service';
 import { AdminDriverVerificationController } from './admin-driver-verification.controller';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -22,10 +24,15 @@ import { TokenRevocationService } from './token-revocation.service';
       },
     }),
   ],
-  controllers: [AuthController, AdminDriverVerificationController],
+  controllers: [
+    AuthController,
+    AdminDriverVerificationController,
+    AdminDriverUserLinkController,
+  ],
   providers: [
     AuthService,
     DriverVerificationAdminService,
+    AdminDriverUserLinkService,
     TokenRevocationService,
     JwtStrategy,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
