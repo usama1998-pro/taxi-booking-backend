@@ -7,7 +7,7 @@
 import '../src/bootstrap-env';
 import * as bcrypt from 'bcrypt';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import * as readline from 'node:readline/promises';
 import { getPrismaMariaDbAdapterConfig } from '../src/core/database/database-url';
 
@@ -59,6 +59,24 @@ async function main(): Promise<void> {
       return;
     }
 
+    const existingUserByEmail = await prisma.user.findUnique({ where: { email } });
+    if (existingUserByEmail) {
+      console.error(
+        'That email is already used by a staff user. Use a different email or update the existing user in the database.',
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    const existingUserByPhone = await prisma.user.findUnique({ where: { phone } });
+    if (existingUserByPhone) {
+      console.error(
+        `That phone number is already used by staff user ${existingUserByPhone.email} (id: ${existingUserByPhone.id}). Use a different phone or change the existing row.`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+
     const hash = await bcrypt.hash(password, SALT_ROUNDS);
     const user = await prisma.user.create({
       data: {
@@ -74,7 +92,15 @@ async function main(): Promise<void> {
       `Admin user created: ${user.id} (${user.email})${isSuperAdmin ? ' [super admin]' : ''}.`,
     );
   } catch (e) {
-    console.error(e);
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      const target = (e.meta as { target?: string[] } | undefined)?.target;
+      const fields = Array.isArray(target) ? target.join(', ') : 'unknown field(s)';
+      console.error(
+        `Unique constraint failed (${fields}). Email and phone must be unused on both User and Driver tables.`,
+      );
+    } else {
+      console.error(e);
+    }
     process.exitCode = 1;
   } finally {
     await prisma.$disconnect();

@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "prisma generate && prisma migrate deploy && nest build",
+    "build": "prisma generate && prisma migrate deploy && ts-node scripts/ensure-super-admin-from-env.ts && nest build",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
@@ -24,6 +24,7 @@
     "docker:up": "docker compose up --build -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f api",
+    "ensure-super-admin-from-env": "ts-node scripts/ensure-super-admin-from-env.ts",
     "create-admin": "ts-node scripts/create-admin.ts",
     "promote-super-admin": "ts-node scripts/promote-super-admin.ts",
     "set-driver-code": "ts-node scripts/set-driver-verification-code.ts",

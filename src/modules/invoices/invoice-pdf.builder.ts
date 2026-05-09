@@ -28,8 +28,8 @@ const COMPANY_NAME = 'Taxi Barcelona 24';
 const COMPANY_LINES = [
   'Barcelona International Airport, 08820 El Prat de Llobregat, Barcelona, Spain',
   '0034663619000',
-  'www.taxibarcelons.com',
-  'info@taxibarcelons.com',
+  'www.taxibarcelona24.com',
+  'info@taxibarcelona24.com',
 ];
 
 const TERMS_TEXT = 'Payment received via bank transfer';
@@ -100,7 +100,7 @@ function transferDescription(pickup: string, dropoff: string): string {
   return `Transfer to ${dr}`;
 }
 
-/** A4 invoice layout aligned with company reference PDF (taxibarcelons). */
+/** A4 invoice layout aligned with company reference PDF (taxibarcelona24). */
 export function buildDriverInvoicePdf(inv: DriverInvoicePdfModel): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: PAGE_MARGIN });
