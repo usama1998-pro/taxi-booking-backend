@@ -52,9 +52,31 @@ export class AuthService {
   }
 
   async signin(dto: SigninDto): Promise<LoginResponse> {
-    const driver = await this.prisma.driver.findUnique({
-      where: { email: dto.email },
-    });
+    const email = dto.email.trim().toLowerCase();
+    const [user, driver] = await Promise.all([
+      this.prisma.user.findUnique({ where: { email } }),
+      this.prisma.driver.findUnique({ where: { email } }),
+    ]);
+
+    if (
+      user?.isAdmin &&
+      (await bcrypt.compare(dto.password, user.password))
+    ) {
+      const { tokenVersion } = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { tokenVersion: { increment: 1 } },
+        select: { tokenVersion: true },
+      });
+      return this.signAccessToken({
+        sub: user.id,
+        email: user.email,
+        typ: 'user',
+        is_admin: true,
+        is_super_admin: user.isSuperAdmin,
+        tv: tokenVersion,
+      });
+    }
+
     if (driver) {
       if (!(await bcrypt.compare(dto.password, driver.password))) {
         throw new UnauthorizedException('Invalid email or password');
@@ -76,30 +98,12 @@ export class AuthService {
       });
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
     if (!user || !(await bcrypt.compare(dto.password, user.password))) {
       throw new UnauthorizedException('Invalid email or password');
     }
-    if (!user.isAdmin) {
-      throw new UnauthorizedException(
-        'Passenger accounts cannot sign in here; use npm run create-admin for staff accounts',
-      );
-    }
-    const { tokenVersion } = await this.prisma.user.update({
-      where: { id: user.id },
-      data: { tokenVersion: { increment: 1 } },
-      select: { tokenVersion: true },
-    });
-    return this.signAccessToken({
-      sub: user.id,
-      email: user.email,
-      typ: 'user',
-      is_admin: true,
-      is_super_admin: user.isSuperAdmin,
-      tv: tokenVersion,
-    });
+    throw new UnauthorizedException(
+      'Passenger accounts cannot sign in here; use npm run create-admin for staff accounts',
+    );
   }
 
   async verifyCode(dto: VerifyCodeDto): Promise<LoginResponse> {

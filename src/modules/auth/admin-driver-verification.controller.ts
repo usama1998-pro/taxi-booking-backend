@@ -23,7 +23,7 @@ export class AdminDriverVerificationController {
   @ApiOperation({
     summary: 'Set or replace a driver verification code',
     description:
-      'Authenticated access. Upserts the 4-digit code for the driver identified by email.',
+      'Authenticated access. Upserts the 4-digit code for the driver identified by email. If there is no driver row yet but a `User` exists with that email (passenger or staff), a driver profile is created automatically and linked to that user.',
   })
   @ApiResponse({ status: 404, description: 'Driver email not found' })
   @ApiResponse({ status: 409, description: 'Code already used by another driver' })

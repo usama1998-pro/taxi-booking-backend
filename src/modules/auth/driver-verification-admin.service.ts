@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { assertNoUniqueViolation } from '../../common/utils/prisma-error.util';
 import { PrismaService } from '../../core/database/prisma.service';
 
 @Injectable()
@@ -14,7 +15,8 @@ export class DriverVerificationAdminService {
     return raw.replace(/\D/g, '').slice(0, 4);
   }
 
-  private async findDriverByEmail(driverEmail: string) {
+  /** Driver must already exist (e.g. delete-by-email). */
+  private async findDriverByEmailStrict(driverEmail: string) {
     const email = driverEmail.trim().toLowerCase();
     const driver = await this.prisma.driver.findUnique({
       where: { email },
@@ -26,6 +28,58 @@ export class DriverVerificationAdminService {
     return driver;
   }
 
+  /**
+   * For setting/updating codes: use existing driver, or create a `Driver` row from a `User` with
+   * the same email (passenger or staff) so a code can be stored. Staff password sign-in still
+   * prefers the staff `User` when both rows share the email (see `AuthService.signin`).
+   */
+  private async findDriverOrProvisionFromUser(driverEmail: string) {
+    const email = driverEmail.trim().toLowerCase();
+    const existing = await this.prisma.driver.findUnique({
+      where: { email },
+      select: { id: true, email: true, name: true },
+    });
+    if (existing) {
+      return existing;
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        phone: true,
+        password: true,
+      },
+    });
+    if (!user) {
+      throw new NotFoundException(
+        'No driver or user found for that email',
+      );
+    }
+    try {
+      const created = await this.prisma.driver.create({
+        data: {
+          userId: user.id,
+          name: user.fullName,
+          email: user.email,
+          phone: user.phone,
+          password: user.password,
+          isAvailable: true,
+          isActive: true,
+        },
+        select: { id: true, email: true, name: true },
+      });
+      return created;
+    } catch (e) {
+      assertNoUniqueViolation(
+        e,
+        'Cannot create driver profile for this user: email or phone already used on another driver',
+      );
+      throw e;
+    }
+  }
+
   async setForDriverEmail(input: {
     driverEmail: string;
     code: string;
@@ -35,7 +89,9 @@ export class DriverVerificationAdminService {
     if (!/^\d{4}$/.test(code)) {
       throw new BadRequestException('Code must be exactly 4 digits');
     }
-    const driver = await this.findDriverByEmail(input.driverEmail);
+    const driver = await this.findDriverOrProvisionFromUser(
+      input.driverEmail,
+    );
     const taken = await this.prisma.driverVerificationCode.findUnique({
       where: { code },
       select: { driverId: true },
@@ -65,15 +121,24 @@ export class DriverVerificationAdminService {
     code?: string;
     isActive?: boolean;
   }) {
-    const driver = await this.findDriverByEmail(input.driverEmail);
+    const driver = await this.findDriverOrProvisionFromUser(
+      input.driverEmail,
+    );
     const existing = await this.prisma.driverVerificationCode.findUnique({
       where: { driverId: driver.id },
       select: { driverId: true },
     });
     if (!existing) {
-      throw new NotFoundException(
-        'No verification code configured for this driver',
-      );
+      if (input.code === undefined) {
+        throw new BadRequestException(
+          'No verification code yet for this driver; send a 4-digit code (or use POST to set one).',
+        );
+      }
+      return this.setForDriverEmail({
+        driverEmail: input.driverEmail,
+        code: input.code,
+        isActive: input.isActive,
+      });
     }
 
     const nextCode =
@@ -142,7 +207,7 @@ export class DriverVerificationAdminService {
   }
 
   async removeByDriverEmail(driverEmail: string) {
-    const driver = await this.findDriverByEmail(driverEmail);
+    const driver = await this.findDriverByEmailStrict(driverEmail);
     return this.remove(driver.id);
   }
 }
