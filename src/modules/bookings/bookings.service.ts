@@ -120,6 +120,14 @@ export class BookingsService {
 
     const byEmail = await this.prisma.user.findUnique({ where: { email } });
     if (byEmail) {
+      const isViatorGuest =
+        email.startsWith('viator.') && email.endsWith('@taxibarcelona24.guest');
+      if (isViatorGuest && name !== byEmail.fullName) {
+        await this.prisma.user.update({
+          where: { id: byEmail.id },
+          data: { fullName: name, phone },
+        });
+      }
       return byEmail.id;
     }
     const byPhone = await this.prisma.user.findUnique({ where: { phone } });

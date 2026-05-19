@@ -14,13 +14,24 @@ export type ViatorBookingDetails = {
   arrivalFlightNo?: string;
   arrivalTime?: string;
   arrivalAirline?: string;
+  departureFlightNo?: string;
+  departureTime?: string;
+  departureAirline?: string;
   tourGrade?: string;
 };
 
 /** Ordered longest-first so inline regex stops at the next real label. */
 const VIATOR_INLINE_FIELDS: { key: keyof ViatorBookingDetails; labels: string[] }[] = [
   { key: 'productName', labels: ['Tour Name'] },
-  { key: 'leadTraveler', labels: ['Lead Traveler Name'] },
+  {
+    key: 'leadTraveler',
+    labels: [
+      'Lead Traveler Name',
+      'Lead Traveller Name',
+      'Lead Traveler',
+      'Lead Traveller',
+    ],
+  },
   { key: 'travelerNames', labels: ['Traveler Names'] },
   { key: 'travelers', labels: ['Travelers'] },
   { key: 'tourGrade', labels: ['Tour Grade Description', 'Tour Grade'] },
@@ -29,6 +40,12 @@ const VIATOR_INLINE_FIELDS: { key: keyof ViatorBookingDetails; labels: string[] 
   { key: 'arrivalFlightNo', labels: ['Arrival Flight No', 'Arrival Flight Number'] },
   { key: 'arrivalTime', labels: ['Arrival Time'] },
   { key: 'arrivalAirline', labels: ['Arrival Airline'] },
+  {
+    key: 'departureFlightNo',
+    labels: ['Departure Flight No', 'Departure Flight Number'],
+  },
+  { key: 'departureTime', labels: ['Departure Time'] },
+  { key: 'departureAirline', labels: ['Departure Airline'] },
   { key: 'dropoffLocation', labels: ['Drop Off Location', 'Drop-off Location', 'Dropoff Location'] },
   { key: 'specialRequirements', labels: ['Special Requirements', 'Special Requests'] },
 ];
@@ -101,6 +118,32 @@ function sanitizeValue(raw: string): string | undefined {
   return v;
 }
 
+/** Flight numbers must not contain clock times (common parse bleed). */
+function sanitizeFlightNumber(raw?: string): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  const v = raw.replace(/\s+/g, ' ').trim();
+  if (/\d{1,2}:\d{2}\s*(?:am|pm)?/i.test(v) || /\btime\b/i.test(v)) {
+    return undefined;
+  }
+  if (!/^[A-Za-z0-9-]{1,12}$/.test(v)) {
+    return undefined;
+  }
+  return sanitizeValue(v);
+}
+
+function sanitizeTimeLabel(raw?: string): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  const v = raw.replace(/\s+/g, ' ').trim();
+  if (!/^\d{1,2}:\d{2}\s*(?:am|pm)?$/i.test(v)) {
+    return undefined;
+  }
+  return sanitizeValue(v);
+}
+
 function extractBookingSection(text: string): string {
   const normalized = text.replace(/\r\n/g, '\n');
   const startMatch = normalized.search(
@@ -162,6 +205,106 @@ function extractAlternatePhone(text: string): string | undefined {
   return undefined;
 }
 
+function extractEmbeddedLegFromText(text: string, leg: 'arrival' | 'departure'): {
+  airline?: string;
+  flightNo?: string;
+  time?: string;
+} {
+  const prefix = leg === 'arrival' ? 'arrival' : 'departure';
+  const out: { airline?: string; flightNo?: string; time?: string } = {};
+  const airline = text.match(
+    new RegExp(`\\b${prefix}\\s+airline\\s*:\\s*([A-Za-z0-9]{2,12})\\b`, 'i'),
+  )?.[1];
+  const flight = text.match(
+    new RegExp(
+      `\\b${prefix}\\s+flight\\s*(?:no\\.?|number)?\\s*:\\s*([A-Za-z0-9]{1,10})\\b`,
+      'i',
+    ),
+  )?.[1];
+  const time = text.match(
+    new RegExp(
+      `\\b${prefix}\\s+time\\s*:\\s*(\\d{1,2}:\\d{2}\\s*(?:am|pm)?)\\b`,
+      'i',
+    ),
+  )?.[1];
+  if (airline) {
+    out.airline = sanitizeValue(airline);
+  }
+  if (flight) {
+    out.flightNo = sanitizeFlightNumber(flight);
+  }
+  if (time) {
+    out.time = sanitizeTimeLabel(time);
+  }
+  return out;
+}
+
+function applyEmbeddedLegFromPickup(fields: Partial<ViatorBookingDetails>): void {
+  const raw = fields.pickupLocation;
+  if (!raw) {
+    return;
+  }
+  const arrival = extractEmbeddedLegFromText(raw, 'arrival');
+  const departure = extractEmbeddedLegFromText(raw, 'departure');
+
+  if (!fields.arrivalAirline && arrival.airline) {
+    fields.arrivalAirline = arrival.airline;
+  }
+  if (!fields.arrivalFlightNo && arrival.flightNo) {
+    fields.arrivalFlightNo = arrival.flightNo;
+  }
+  if (!fields.arrivalTime && arrival.time) {
+    fields.arrivalTime = arrival.time;
+  }
+
+  if (!fields.departureAirline && departure.airline) {
+    fields.departureAirline = departure.airline;
+  }
+  if (!fields.departureFlightNo && departure.flightNo) {
+    fields.departureFlightNo = departure.flightNo;
+  }
+  if (!fields.departureTime && departure.time) {
+    fields.departureTime = departure.time;
+  }
+}
+
+function normalizeFlightAndTimeFields(
+  fields: Partial<ViatorBookingDetails>,
+): void {
+  fields.arrivalFlightNo = sanitizeFlightNumber(fields.arrivalFlightNo);
+  fields.departureFlightNo = sanitizeFlightNumber(fields.departureFlightNo);
+  fields.arrivalTime = sanitizeTimeLabel(fields.arrivalTime);
+  fields.departureTime = sanitizeTimeLabel(fields.departureTime);
+
+  if (fields.arrivalFlightNo && fields.arrivalTime) {
+    const contaminated = fields.arrivalFlightNo.match(
+      /(\d{1,2}:\d{2}\s*(?:am|pm)?)/i,
+    );
+    if (contaminated) {
+      if (!fields.arrivalTime) {
+        fields.arrivalTime = sanitizeTimeLabel(contaminated[1]);
+      }
+      fields.arrivalFlightNo = undefined;
+    }
+  }
+}
+
+function cleanPickupLocationLabel(raw?: string): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  let v = raw;
+  v = v.replace(/\s+special\s+requirements\s*:.*/i, '').trim();
+  v = v.replace(/\s+arrival\s+(?:flight|airline|time)\s*(?:no\.?|number)?\s*:.*/i, '').trim();
+  v = v.replace(/\s+departure\s+(?:flight|airline|time)\s*(?:no\.?|number)?\s*:.*/i, '').trim();
+  v = v.replace(/\s+drop[\s-]*off\s+location\s*:.*/i, '').trim();
+  v = v.replace(/\(?alternate\s+phone\)?.*$/i, '').trim();
+  v = v.replace(/\bphone\s*:.*/i, '').trim();
+  v = v.replace(/\bUS\+?\d[\d\s().-]{7,}\b/gi, '').trim();
+  v = v.replace(/\s{2,}/g, ' ').trim();
+  return sanitizeValue(v);
+}
+
 function cleanSpecialRequirements(raw?: string): string | undefined {
   if (!raw) {
     return undefined;
@@ -192,6 +335,11 @@ function extractFromText(text: string): ViatorBookingDetails {
   fields.specialRequirements = cleanSpecialRequirements(
     fields.specialRequirements,
   );
+
+  normalizeFlightAndTimeFields(fields);
+  applyEmbeddedLegFromPickup(fields);
+  fields.pickupLocation = cleanPickupLocationLabel(fields.pickupLocation);
+  fields.dropoffLocation = cleanPickupLocationLabel(fields.dropoffLocation);
 
   if (fields.productName) {
     fields.productName = fields.productName.replace(/\s+Travel\s+Date\s*$/i, '').trim();

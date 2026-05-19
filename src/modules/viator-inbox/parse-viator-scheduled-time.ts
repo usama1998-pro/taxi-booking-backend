@@ -20,20 +20,48 @@ function parseTimeOnDate(base: Date, timeLabel: string): Date {
   return out;
 }
 
+export type ViatorPickupTimeInput = {
+  arrivalTime?: string;
+  departureTime?: string;
+  /** True when picking up at the airport (inbound flight). */
+  isAirportPickup?: boolean;
+};
+
 /**
- * Combines Viator subject date label (e.g. "Tue, Sep 29, 2026") with optional arrival time.
+ * Pickup `scheduledTime`: airport inbound uses arrival time; hotel→airport uses departure time.
+ */
+export function resolveViatorPickupTimeLabel(input: ViatorPickupTimeInput): string | undefined {
+  const arrival = input.arrivalTime?.trim();
+  const departure = input.departureTime?.trim();
+
+  if (input.isAirportPickup) {
+    return arrival || departure;
+  }
+  return departure || arrival;
+}
+
+/**
+ * Combines Viator subject date with the resolved pickup time (not mixed into flight no.).
  */
 export function parseViatorScheduledTimeIso(
   pickupDateLabel: string,
-  arrivalTime?: string,
+  timeInput?: string | ViatorPickupTimeInput,
 ): string {
   const parsed = Date.parse(pickupDateLabel.trim());
   if (Number.isNaN(parsed)) {
     throw new Error(`Could not parse Viator travel date: ${pickupDateLabel}`);
   }
+
+  let pickupTime: string | undefined;
+  if (typeof timeInput === 'string') {
+    pickupTime = timeInput.trim() || undefined;
+  } else if (timeInput) {
+    pickupTime = resolveViatorPickupTimeLabel(timeInput);
+  }
+
   let scheduled = new Date(parsed);
-  if (arrivalTime?.trim()) {
-    scheduled = parseTimeOnDate(scheduled, arrivalTime);
+  if (pickupTime) {
+    scheduled = parseTimeOnDate(scheduled, pickupTime);
   } else {
     scheduled.setHours(9, 0, 0, 0);
   }
