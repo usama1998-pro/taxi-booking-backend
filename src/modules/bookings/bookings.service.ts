@@ -11,6 +11,10 @@ import { hashPassword } from '../../common/utils/password.util';
 import { PrismaService } from '../../core/database/prisma.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { getBookingListScheduledDayBounds } from './booking-list-scheduled-bounds';
+import {
+  assertPickupNotInPast,
+  parseScheduledTime,
+} from './booking-scheduled-time';
 import { calculateBookingPrice } from './booking-pricing';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import {
@@ -18,6 +22,7 @@ import {
   ListBookingsQueryDto,
 } from './dto/list-bookings-query.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
+import { MailService } from '../mail/mail.service';
 
 const bookingInclude = {
   user: {
@@ -59,11 +64,18 @@ export type PaginatedBookings = {
 
 export type BookingCreateResult = BookingPublic & {
   assignmentMessage: string;
+  notifications: {
+    customerEmailSent: boolean;
+    ownerEmailSent: boolean;
+  };
 };
 
 @Injectable()
 export class BookingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+  ) {}
 
   private async allocateBookingReference(
     tx: Prisma.TransactionClient,
@@ -184,6 +196,55 @@ export class BookingsService {
     }
   }
 
+  async findByBookingReference(
+    bookingReference: string,
+  ): Promise<BookingPublic | null> {
+    const ref = bookingReference.trim();
+    if (!ref) {
+      return null;
+    }
+    const booking = await this.prisma.booking.findFirst({
+      where: { bookingReference: ref },
+      include: bookingInclude,
+    });
+    return booking ? this.toPublicBooking(booking) : null;
+  }
+
+  /**
+   * Idempotent: returns existing booking if reference already saved.
+   * Skips confirmation emails (Viator already notified the partner).
+   */
+  async createFromViator(
+    dto: CreateBookingDto,
+  ): Promise<{ booking: BookingPublic; created: boolean }> {
+    const ref = dto.bookingReference?.trim();
+    if (ref) {
+      const existing = await this.findByBookingReference(ref);
+      if (existing) {
+        return { booking: existing, created: false };
+      }
+    }
+    try {
+      const created = await this.create(dto);
+      return { booking: created, created: true };
+    } catch (err) {
+      if (ref) {
+        const duplicate =
+          (err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === 'P2002') ||
+          (err instanceof BadRequestException &&
+            String(err.message).includes('already in use'));
+        if (duplicate) {
+          const existing = await this.findByBookingReference(ref);
+          if (existing) {
+            return { booking: existing, created: false };
+          }
+        }
+      }
+      throw err;
+    }
+  }
+
   async create(dto: CreateBookingDto): Promise<BookingCreateResult> {
     const userId =
       dto.userId ?? (await this.resolveOrCreatePublicBookingUserId(dto));
@@ -202,6 +263,9 @@ export class BookingsService {
     if (!user) {
       throw new NotFoundException(`User ${userId} not found`);
     }
+
+    const scheduledTime = parseScheduledTime(dto.scheduledTime);
+    assertPickupNotInPast(scheduledTime);
 
     const created = await this.prisma.$transaction(
       async (tx) => {
@@ -247,10 +311,29 @@ export class BookingsService {
       throw new InternalServerErrorException('Booking was not persisted');
     }
 
+    const publicBooking = this.toPublicBooking(persisted);
+    const skipEmails = dto.bookingReference?.trim().startsWith('BR-') === true;
+    const notifications = skipEmails
+      ? { customerEmailSent: false, ownerEmailSent: false }
+      : await this.mailService.sendBookingEmails(publicBooking);
+
     return {
-      ...this.toPublicBooking(persisted),
+      ...publicBooking,
       assignmentMessage: 'Booking created successfully.',
+      notifications,
     };
+  }
+
+  /** Public booking lookup by uuid (no auth) — used by mail endpoints. */
+  async findOnePublicByUuid(uuid: string): Promise<BookingPublic> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { uuid },
+      include: bookingInclude,
+    });
+    if (!booking) {
+      throw new NotFoundException(`Booking ${uuid} not found`);
+    }
+    return this.toPublicBooking(booking);
   }
 
   async findAll(
@@ -280,18 +363,13 @@ export class BookingsService {
         { createdAt: 'desc' },
       ];
     } else if (query.timeScope === BookingTimeScope.Current) {
-      /** Open bookings whose pickup is scheduled on today's calendar date (server `TZ`). */
-      const { startOfToday, startOfTomorrow } = getBookingListScheduledDayBounds();
+      /** Open bookings due today or earlier (includes overdue until completed/cancelled). */
+      const { startOfTomorrow } = getBookingListScheduledDayBounds();
       where = {
         AND: [
           baseWhere,
           notTerminal,
-          {
-            scheduledTime: {
-              gte: startOfToday,
-              lt: startOfTomorrow,
-            },
-          },
+          { scheduledTime: { lt: startOfTomorrow } },
         ],
       };
       orderBy = { scheduledTime: 'asc' };
@@ -413,7 +491,9 @@ export class BookingsService {
       data.dropoffLocation = d.dropoffLocation as Prisma.InputJsonValue;
     }
     if (d.scheduledTime !== undefined) {
-      data.scheduledTime = new Date(d.scheduledTime);
+      const nextScheduled = parseScheduledTime(d.scheduledTime);
+      assertPickupNotInPast(nextScheduled);
+      data.scheduledTime = nextScheduled;
     }
     const nextPassengerCount = d.passengerCount ?? booking.passengerCount;
     const nextLuggageCount = d.luggageCount ?? booking.luggageCount;

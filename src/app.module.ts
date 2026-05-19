@@ -7,7 +7,10 @@ import { BookingsModule } from './modules/bookings/bookings.module';
 import { DriversModule } from './modules/drivers/drivers.module';
 import { InsightsModule } from './modules/insights/insights.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
+import { MailModule } from './modules/mail/mail.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 import { UsersModule } from './modules/users/users.module';
+import { ViatorInboxModule } from './modules/viator-inbox/viator-inbox.module';
 
 @Module({
   imports: [
@@ -17,9 +20,12 @@ import { UsersModule } from './modules/users/users.module';
     AuthModule,
     UsersModule,
     DriversModule,
+    MailModule.register(),
     BookingsModule,
     InsightsModule,
     InvoicesModule,
+    PaymentsModule,
+    ViatorInboxModule,
   ],
 })
 export class AppModule {}

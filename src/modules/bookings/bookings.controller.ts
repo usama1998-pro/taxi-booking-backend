@@ -46,7 +46,7 @@ export class BookingsController {
   @ApiOperation({
     summary: 'List bookings',
     description:
-      'Returns bookings in dispatcher mode. Paginated with `page` (1-based) and `pageSize` (default 20, max 100). Optional `timeScope=past|current|upcoming`: **past** — completed/cancelled, newest completion first; **current** — open bookings whose pickup is on today\'s date (server `TZ`); **upcoming** — open bookings from tomorrow onward. Omit for all bookings (`createdAt` desc).',
+      'Returns bookings in dispatcher mode. Paginated with `page` (1-based) and `pageSize` (default 20, max 100). Optional `timeScope=past|current|upcoming`: **past** — completed/cancelled only; **current** — open bookings due today or earlier (includes overdue); **upcoming** — open bookings from tomorrow onward (server `TZ`). Omit for all bookings (`createdAt` desc).',
   })
   @ApiOkResponse({
     schema: {
