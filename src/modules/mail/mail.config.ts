@@ -14,8 +14,27 @@ export function isSmtpConfigured(): boolean {
   return Boolean(host && user && pass);
 }
 
+function resolveSmtpHost(): string | null {
+  const host = process.env.SMTP_HOST?.trim();
+  if (!host) {
+    return null;
+  }
+  const lower = host.toLowerCase();
+  if (lower.startsWith('imap.')) {
+    return `smtp.${host.slice(5)}`;
+  }
+  if (lower.includes('hostinger') && !lower.startsWith('smtp.')) {
+    return 'smtp.hostinger.com';
+  }
+  return host;
+}
+
 export function getSmtpConfig(): SmtpConfig | null {
   if (!isSmtpConfigured()) {
+    return null;
+  }
+  const host = resolveSmtpHost();
+  if (!host) {
     return null;
   }
   const portRaw = process.env.SMTP_PORT?.trim();
@@ -25,7 +44,7 @@ export function getSmtpConfig(): SmtpConfig | null {
     process.env.SMTP_SECURE?.trim()?.toLowerCase() !== 'false';
 
   return {
-    host: process.env.SMTP_HOST!.trim(),
+    host,
     port: Number.isFinite(port) ? port : 465,
     secure: port === 465 ? true : secure,
     user: process.env.SMTP_USER!.trim(),

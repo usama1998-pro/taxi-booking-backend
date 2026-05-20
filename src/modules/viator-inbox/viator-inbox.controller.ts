@@ -70,14 +70,16 @@ export class ViatorInboxController {
 
   @Post('inbox/sync')
   @ApiOperation({
-    summary: 'Poll Hostinger inbox now for new Viator booking emails',
+    summary: 'Sync Hostinger inbox now for new Viator booking emails',
+    description:
+      'Uses the persistent IMAP IDLE connection. Requires the backend IMAP listener to be connected.',
   })
   async syncNow() {
     if (!isImapConfigured()) {
       throw new ServiceUnavailableException(
-        'Hostinger mail not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS (same mailbox that receives Viator emails).',
+        'Hostinger mail not configured. Set IMAP_HOST, SMTP_USER, and SMTP_PASS (same mailbox that receives Viator emails).',
       );
     }
-    return this.viatorInbox.syncFromInbox();
+    return this.viatorInbox.syncFromInbox('manual-api');
   }
 }

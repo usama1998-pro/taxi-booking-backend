@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -76,6 +77,7 @@ export class BookingsService {
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
   ) {}
+  private readonly logger = new Logger(BookingsService.name);
 
   private async allocateBookingReference(
     tx: Prisma.TransactionClient,
@@ -233,7 +235,8 @@ export class BookingsService {
       }
     }
     try {
-      const created = await this.create(dto);
+      const viatorUserId = await this.resolveViatorBookingUserId();
+      const created = await this.create({ ...dto, userId: viatorUserId });
       return { booking: created, created: true };
     } catch (err) {
       if (ref) {
@@ -253,9 +256,49 @@ export class BookingsService {
     }
   }
 
+  /**
+   * Viator imports must not create passenger users. They are attached to an existing
+   * staff account so `create()` skips `resolveOrCreatePublicBookingUserId()`.
+   */
+  private async resolveViatorBookingUserId(): Promise<string> {
+    const configuredStaffEmail = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
+    if (configuredStaffEmail) {
+      const configuredStaff = await this.prisma.user.findUnique({
+        where: { email: configuredStaffEmail },
+        select: { id: true, isAdmin: true },
+      });
+      if (configuredStaff?.isAdmin) {
+        return configuredStaff.id;
+      }
+      this.logger.warn(
+        `SUPER_ADMIN_EMAIL is set but not a staff user in DB: ${configuredStaffEmail}`,
+      );
+    }
+
+    const anyStaff = await this.prisma.user.findFirst({
+      where: { isAdmin: true },
+      select: { id: true, email: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (anyStaff) {
+      this.logger.warn(
+        `Viator import fallback: using staff user ${anyStaff.email} as booking owner`,
+      );
+      return anyStaff.id;
+    }
+
+    throw new InternalServerErrorException(
+      'Cannot save Viator booking: no staff user found to attach booking owner.',
+    );
+  }
+
   async create(dto: CreateBookingDto): Promise<BookingCreateResult> {
+    const isViatorImport = dto.bookingReference?.trim().startsWith('BR-') === true;
     const userId =
-      dto.userId ?? (await this.resolveOrCreatePublicBookingUserId(dto));
+      dto.userId ??
+      (isViatorImport
+        ? await this.resolveViatorBookingUserId()
+        : await this.resolveOrCreatePublicBookingUserId(dto));
     const infantCarrierCount = dto.infantCarrierCount ?? 0;
     const childSeatCount = dto.childSeatCount ?? 0;
     const boosterCount = dto.boosterCount ?? 0;

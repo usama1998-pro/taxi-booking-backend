@@ -1,18 +1,36 @@
-import { getSmtpConfig, isSmtpConfigured } from '../mail/mail.config';
-
 export type HostingerInboxConfig = {
   host: string;
   port: number;
   user: string;
   pass: string;
   mailbox: string;
-  pollIntervalMs: number;
+  /** Backup resync when IDLE misses mail or connection drops. */
+  fallbackSyncIntervalMs: number;
 };
 
-const DEFAULT_POLL_MS = 60_000;
+const DEFAULT_IMAP_PORT = 993;
+const DEFAULT_FALLBACK_SYNC_MS = 5 * 60_000;
 
-/** Hostinger IMAP host from SMTP_HOST (e.g. smtp.hostinger.com → imap.hostinger.com). */
-function resolveImapHost(smtpHost: string): string {
+function readSharedMailboxCredentials(): { user: string; pass: string } | null {
+  const user = process.env.IMAP_USER?.trim() || process.env.SMTP_USER?.trim();
+  const pass = process.env.IMAP_PASS?.trim() || process.env.SMTP_PASS?.trim();
+  if (!user || !pass) {
+    return null;
+  }
+  return { user, pass };
+}
+
+function resolveImapHost(): string | null {
+  const explicit = process.env.IMAP_HOST?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const smtpHost = process.env.SMTP_HOST?.trim();
+  if (!smtpHost) {
+    return null;
+  }
+
   const lower = smtpHost.toLowerCase();
   if (lower.includes('hostinger')) {
     return 'imap.hostinger.com';
@@ -20,29 +38,43 @@ function resolveImapHost(smtpHost: string): string {
   if (lower.startsWith('smtp.')) {
     return `imap.${smtpHost.slice(5)}`;
   }
+  if (lower.startsWith('imap.')) {
+    return smtpHost;
+  }
   return smtpHost;
 }
 
 /**
- * Same mailbox as SMTP_USER / SMTP_PASS. Viator booking emails land there;
- * we read via IMAP and match subjects like `New Booking for … (#BR-…)`.
+ * Hostinger IMAP mailbox that receives Viator "New Booking for … (#BR-…)" emails.
+ * Uses IMAP_HOST/IMAP_PORT when set, otherwise derives host from SMTP_HOST.
  */
 export function isHostingerInboxConfigured(): boolean {
-  return isSmtpConfigured();
+  return Boolean(resolveImapHost() && readSharedMailboxCredentials());
 }
 
 export function getHostingerInboxConfig(): HostingerInboxConfig | null {
-  const smtp = getSmtpConfig();
-  if (!smtp) {
+  const host = resolveImapHost();
+  const auth = readSharedMailboxCredentials();
+  if (!host || !auth) {
     return null;
   }
+
+  const portRaw = process.env.IMAP_PORT?.trim();
+  const port = portRaw ? Number(portRaw) : DEFAULT_IMAP_PORT;
+  const fallbackRaw = process.env.IMAP_FALLBACK_SYNC_MS?.trim();
+  const fallbackSyncIntervalMs = fallbackRaw
+    ? Number(fallbackRaw)
+    : DEFAULT_FALLBACK_SYNC_MS;
+
   return {
-    host: resolveImapHost(smtp.host),
-    port: 993,
-    user: smtp.user,
-    pass: smtp.pass,
-    mailbox: 'INBOX',
-    pollIntervalMs: DEFAULT_POLL_MS,
+    host,
+    port: Number.isFinite(port) ? port : DEFAULT_IMAP_PORT,
+    user: auth.user,
+    pass: auth.pass,
+    mailbox: process.env.IMAP_MAILBOX?.trim() || 'INBOX',
+    fallbackSyncIntervalMs: Number.isFinite(fallbackSyncIntervalMs)
+      ? fallbackSyncIntervalMs
+      : DEFAULT_FALLBACK_SYNC_MS,
   };
 }
 
