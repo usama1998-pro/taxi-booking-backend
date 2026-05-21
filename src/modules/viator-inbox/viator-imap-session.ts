@@ -4,21 +4,30 @@ import type { HostingerInboxConfig } from './viator-inbox.config';
 
 const logger = new Logger('ViatorImapSession');
 
-const CONNECTION_TIMEOUT_MS = 30_000;
-/** Long timeout for persistent IDLE connections; imapflow sends NOOP on idle timeout. */
-const SOCKET_TIMEOUT_MS = 30 * 60_000;
+const DEFAULT_CONNECTION_TIMEOUT_MS = 120_000;
+
+function resolveImapTimeoutMs(): number {
+  const raw = process.env.IMAP_SOCKET_TIMEOUT_MS?.trim();
+  if (!raw) {
+    return DEFAULT_CONNECTION_TIMEOUT_MS;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 30_000
+    ? parsed
+    : DEFAULT_CONNECTION_TIMEOUT_MS;
+}
 
 export function createImapClient(cfg: HostingerInboxConfig): ImapFlow {
+  const timeoutMs = resolveImapTimeoutMs();
   const client = new ImapFlow({
     host: cfg.host,
     port: cfg.port,
     secure: true,
     auth: { user: cfg.user, pass: cfg.pass },
     logger: false,
-    connectionTimeout: CONNECTION_TIMEOUT_MS,
-    greetingTimeout: CONNECTION_TIMEOUT_MS,
-    socketTimeout: SOCKET_TIMEOUT_MS,
-    maxIdleTime: 25 * 60_000,
+    connectionTimeout: timeoutMs,
+    greetingTimeout: timeoutMs,
+    socketTimeout: timeoutMs,
   });
 
   client.on('error', (err) => {

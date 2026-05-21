@@ -29,7 +29,10 @@
     "promote-super-admin": "ts-node scripts/promote-super-admin.ts",
     "cleanup-viator-guests": "ts-node scripts/cleanup-viator-guest-users.ts",
     "set-driver-code": "ts-node scripts/set-driver-verification-code.ts",
-    "db:flush": "ts-node scripts/flush-db.ts"
+    "db:flush": "ts-node scripts/flush-db.ts",
+    "send-viator-test-email": "ts-node scripts/send-viator-test-email.ts",
+    "debug-viator-inbox-test": "ts-node scripts/debug-viator-inbox-test.ts",
+    "run-viator-test-import-once": "ts-node scripts/run-viator-test-import-once.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.3.5",

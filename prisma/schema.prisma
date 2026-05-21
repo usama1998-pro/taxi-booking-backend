@@ -46,6 +46,22 @@ model Driver {
   verificationCode DriverVerificationCode?
 }
 
+/** In-app / API alerts for new Viator bookings (populated by POST /viator/inbox/check). */
+model ViatorAlert {
+  id              String    @id @default(uuid())
+  viatorReference String    @unique @map("viator_reference")
+  subject         String    @db.VarChar(500)
+  pickupDateLabel String    @map("pickup_date_label") @db.VarChar(200)
+  receivedAt      DateTime  @map("received_at")
+  bookingUuid     String?   @map("booking_uuid")
+  payload         Json
+  dismissedAt     DateTime? @map("dismissed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([dismissedAt, receivedAt])
+  @@map("viator_alerts")
+}
+
 model DriverVerificationCode {
   id        String   @id @default(uuid())
   driverId  String   @unique @map("driver_id")
@@ -123,4 +139,8 @@ model Booking {
   createdAt       DateTime @default(now())
   /** Set when status becomes `completed`; used to sort past bookings (newest completion first). */
   completedAt     DateTime? @map("completed_at")
+  /** Soft delete (trash). Null = active. Purged in batches via POST /bookings/trash/purge. */
+  deletedAt       DateTime? @map("deleted_at")
+
+  @@index([deletedAt])
 }

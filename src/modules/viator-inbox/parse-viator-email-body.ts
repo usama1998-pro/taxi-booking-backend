@@ -1,5 +1,8 @@
 import { simpleParser } from 'mailparser';
 
+import { normalizePhoneNumber } from '../../common/utils/phone.util';
+import { normalizeViatorProductCode } from './viator-allowed-products';
+
 export type ViatorBookingDetails = {
   productName?: string;
   leadTraveler?: string;
@@ -18,6 +21,7 @@ export type ViatorBookingDetails = {
   departureTime?: string;
   departureAirline?: string;
   tourGrade?: string;
+  productCode?: string;
 };
 
 /** Ordered longest-first so inline regex stops at the next real label. */
@@ -196,7 +200,7 @@ function extractAlternatePhone(text: string): string | undefined {
   for (const re of patterns) {
     const m = text.match(re);
     if (m?.[1]) {
-      const phone = m[1].replace(/\s+/g, ' ').trim();
+      const phone = normalizePhoneNumber(m[1].replace(/\s+/g, ' '));
       if (phone.length >= 8) {
         return phone;
       }
@@ -345,6 +349,13 @@ function extractFromText(text: string): ViatorBookingDetails {
     fields.productName = fields.productName.replace(/\s+Travel\s+Date\s*$/i, '').trim();
   }
 
+  const productCode = normalizeViatorProductCode(
+    readInlineLabel(section, 'Product Code'),
+  );
+  if (productCode) {
+    fields.productCode = productCode;
+  }
+
   return fields;
 }
 
@@ -367,4 +378,46 @@ export async function parseViatorEmailBody(
     typeof rawSource === 'string' ? rawSource : rawSource.toString('utf8'),
   );
   return extractFromText(fallback);
+}
+
+/** `Booking Reference:` from Viator / test email body (not the subject `#BR-…` marker). */
+export function parseViatorBookingReferenceFromText(
+  text: string,
+  options?: { allowTestMarker?: boolean },
+): string | null {
+  const section = extractBookingSection(text);
+  const raw = readInlineLabel(section, 'Booking Reference');
+  if (!raw) {
+    return null;
+  }
+  const normalized = raw.trim().toUpperCase();
+  if (/^BR-\d+$/.test(normalized)) {
+    return normalized;
+  }
+  if (options?.allowTestMarker && /^BR-TEST$/i.test(normalized)) {
+    return normalized;
+  }
+  return null;
+}
+
+export async function parseViatorBookingReferenceFromBody(
+  rawSource: string | Buffer,
+  options?: { allowTestMarker?: boolean },
+): Promise<string | null> {
+  try {
+    const parsed = await simpleParser(rawSource);
+    const text =
+      parsed.text?.trim() ||
+      stripHtmlToText(typeof parsed.html === 'string' ? parsed.html : '');
+    if (text) {
+      return parseViatorBookingReferenceFromText(text, options);
+    }
+  } catch {
+    // Fall through to raw decode below.
+  }
+
+  const fallback = stripHtmlToText(
+    typeof rawSource === 'string' ? rawSource : rawSource.toString('utf8'),
+  );
+  return parseViatorBookingReferenceFromText(fallback, options);
 }

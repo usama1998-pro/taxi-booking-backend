@@ -1,3 +1,4 @@
+import { normalizePhoneNumber } from '../../common/utils/phone.util';
 import type { CreateBookingDto } from '../bookings/dto/create-booking.dto';
 import type { ViatorBookingDetails } from './parse-viator-email-body';
 import {
@@ -136,9 +137,9 @@ export function mapViatorToCreateBookingDto(input: {
   details: ViatorBookingDetails;
 }): CreateBookingDto {
   const { viatorReference, pickupDateLabel, details } = input;
-  const phone =
-    details.phone?.trim() ||
-    '+34000000000';
+  const phone = normalizePhoneNumber(
+    details.phone?.trim() || '+34000000000',
+  );
   const customerName = resolveLeadTravelerCustomerName(details);
 
   const airportPickup = isAirportPickup(details);

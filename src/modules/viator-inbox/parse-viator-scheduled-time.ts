@@ -1,10 +1,16 @@
 import { getBookingTimeZone } from '../bookings/booking-scheduled-time';
+import {
+  calendarPartsFromPickupDateLabel,
+  wallClockToUtc,
+} from '../bookings/booking-zoned-time';
 
 /** e.g. "6:45 am", "14:30", "07:30" */
-function parseTimeOnDate(base: Date, timeLabel: string): Date {
+function parseTimeParts(
+  timeLabel: string,
+): { hour: number; minute: number } | null {
   const match = timeLabel.trim().match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
   if (!match) {
-    return base;
+    return null;
   }
   let hour = Number.parseInt(match[1], 10);
   const minute = Number.parseInt(match[2], 10);
@@ -15,9 +21,7 @@ function parseTimeOnDate(base: Date, timeLabel: string): Date {
   if (meridiem === 'am' && hour === 12) {
     hour = 0;
   }
-  const out = new Date(base);
-  out.setHours(hour, minute, 0, 0);
-  return out;
+  return { hour, minute };
 }
 
 export type ViatorPickupTimeInput = {
@@ -41,16 +45,17 @@ export function resolveViatorPickupTimeLabel(input: ViatorPickupTimeInput): stri
 }
 
 /**
- * Combines Viator subject date with the resolved pickup time (not mixed into flight no.).
+ * Combines Viator subject date with pickup time in {@link getBookingTimeZone} (Europe/Madrid).
  */
 export function parseViatorScheduledTimeIso(
   pickupDateLabel: string,
   timeInput?: string | ViatorPickupTimeInput,
 ): string {
-  const parsed = Date.parse(pickupDateLabel.trim());
-  if (Number.isNaN(parsed)) {
-    throw new Error(`Could not parse Viator travel date: ${pickupDateLabel}`);
-  }
+  const timeZone = getBookingTimeZone();
+  const { year, month, day } = calendarPartsFromPickupDateLabel(
+    pickupDateLabel,
+    timeZone,
+  );
 
   let pickupTime: string | undefined;
   if (typeof timeInput === 'string') {
@@ -59,13 +64,17 @@ export function parseViatorScheduledTimeIso(
     pickupTime = resolveViatorPickupTimeLabel(timeInput);
   }
 
-  let scheduled = new Date(parsed);
+  let hour = 9;
+  let minute = 0;
   if (pickupTime) {
-    scheduled = parseTimeOnDate(scheduled, pickupTime);
-  } else {
-    scheduled.setHours(9, 0, 0, 0);
+    const parsed = parseTimeParts(pickupTime);
+    if (parsed) {
+      hour = parsed.hour;
+      minute = parsed.minute;
+    }
   }
-  return scheduled.toISOString();
+
+  return wallClockToUtc(year, month, day, hour, minute, timeZone).toISOString();
 }
 
 export function viatorGuestEmail(viatorReference: string): string {

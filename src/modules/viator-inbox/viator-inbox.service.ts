@@ -2,23 +2,33 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import type { ViatorAlert } from '@prisma/client';
 import type { ImapFlow } from 'imapflow';
 import { randomUUID } from 'node:crypto';
+import { PrismaService } from '../../core/database/prisma.service';
 import { BookingsService } from '../bookings/bookings.service';
+import {
+  assertPickupNotInPast,
+  getBookingTimeZone,
+  parseScheduledTime,
+} from '../bookings/booking-scheduled-time';
 import { getImapConfig, isImapConfigured } from './viator-inbox.config';
+import { VIATOR_INBOX_LOOKBACK_HOURS } from './viator-inbox.constants';
 import { mergeBookingFields, type ViatorBookingFields } from './viator-booking-fields';
 import {
+  parseViatorBookingReferenceFromBody,
   parseViatorEmailBody,
   type ViatorBookingDetails,
 } from './parse-viator-email-body';
 import { parseViatorNewBookingSubject } from './parse-viator-subject';
 import {
-  ViatorImapConnectionService,
-  type ImapSyncTrigger,
-} from './viator-imap-connection.service';
+  isViatorTestBookingSubject,
+  parseViatorTestBookingSubject,
+} from './viator-test-email';
+import { isAllowedViatorProductCode } from './viator-allowed-products';
+import { withImapSession } from './viator-imap-session';
 import { mapViatorToCreateBookingDto } from './viator-to-booking.mapper';
 
 export type ViatorNotificationDto = {
@@ -27,108 +37,144 @@ export type ViatorNotificationDto = {
   viatorReference: string;
   pickupDateLabel: string;
   receivedAt: string;
+  isTestBooking?: boolean;
 } & ViatorBookingFields;
 
 export type ViatorPersistResult = {
   viatorReference: string;
   bookingUuid?: string;
-  /** New row written on this request. */
   savedToDb: boolean;
-  /** Reference was already in the bookings table (no duplicate insert). */
   alreadyInDatabase: boolean;
   error?: string;
 };
 
-export type ViatorLatestMailDto = {
-  found: boolean;
-  subject?: string;
-  viatorReference?: string;
-  pickupDateLabel?: string;
-  receivedAt?: string;
-  from?: string;
-  message?: string;
-  savedToDb?: boolean;
-  alreadyInDatabase?: boolean;
-  bookingUuid?: string;
-} & ViatorBookingFields;
-
 type PendingEntry = ViatorNotificationDto & { imapUid: number };
 
+export type ViatorInboxCheckResult = {
+  added: number;
+  scanned: number;
+  skippedDuplicate: number;
+  skippedProduct: number;
+  lookbackHours: number;
+  notifications: ViatorNotificationDto[];
+};
+
+export type ViatorInboxCheckEnqueueResponse = {
+  accepted: boolean;
+  status: 'started' | 'already_running';
+  lookbackHours: number;
+  message: string;
+};
+
 @Injectable()
-export class ViatorInboxService implements OnModuleInit {
+export class ViatorInboxService {
   constructor(
     private readonly bookingsService: BookingsService,
-    private readonly imapConnection: ViatorImapConnectionService,
+    private readonly prisma: PrismaService,
   ) {}
 
   private readonly logger = new Logger(ViatorInboxService.name);
-  /** Active in-app alerts (not persisted). */
-  private readonly pending = new Map<string, PendingEntry>();
-  /** User-dismissed refs — stay out of the list until server restart. */
-  private readonly dismissed = new Set<string>();
+  private inboxCheckRunning = false;
 
-  onModuleInit(): void {
-    if (!isImapConfigured()) {
-      this.logger.warn(
-        'Hostinger mail not configured — cannot read Viator booking emails (set IMAP_HOST, SMTP_USER, SMTP_PASS)',
-      );
-      return;
-    }
-
-    this.imapConnection.registerNewMailHandler(async (client, trigger) => {
-      await this.syncUnreadOnClient(client, trigger);
-    });
-    this.imapConnection.start();
+  private rowToDto(row: ViatorAlert): ViatorNotificationDto {
+    const payload = (row.payload ?? {}) as ViatorBookingFields & {
+      isTestBooking?: boolean;
+    };
+    const { isTestBooking, ...bookingFields } = payload;
+    return {
+      id: row.id,
+      subject: row.subject,
+      viatorReference: row.viatorReference,
+      pickupDateLabel: row.pickupDateLabel,
+      receivedAt: row.receivedAt.toISOString(),
+      ...(isTestBooking ? { isTestBooking: true } : {}),
+      ...bookingFields,
+    };
   }
 
-  listNotifications(options?: {
+  async listNotifications(options?: {
     limit?: number;
-  }): ViatorNotificationDto[] {
+  }): Promise<ViatorNotificationDto[]> {
     const limit = Math.min(Math.max(options?.limit ?? 50, 1), 100);
-    return [...this.pending.values()]
-      .sort(
-        (a, b) =>
-          new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime(),
-      )
-      .slice(0, limit)
-      .map(({ imapUid: _uid, ...dto }) => dto);
+    const rows = await this.prisma.viatorAlert.findMany({
+      where: { dismissedAt: null },
+      orderBy: { receivedAt: 'desc' },
+      take: limit,
+    });
+    return rows.map((row) => this.rowToDto(row));
   }
 
-  getUnreadCount(): number {
-    return this.pending.size;
+  async getUnreadCount(): Promise<number> {
+    return this.prisma.viatorAlert.count({
+      where: { dismissedAt: null },
+    });
   }
 
   async dismissNotification(id: string): Promise<ViatorNotificationDto> {
-    const entry = [...this.pending.values()].find((n) => n.id === id);
-    if (!entry) {
+    const row = await this.prisma.viatorAlert.findUnique({ where: { id } });
+    if (!row || row.dismissedAt) {
       throw new NotFoundException('Notification not found');
     }
-    this.dismissed.add(entry.viatorReference);
-    this.pending.delete(entry.viatorReference);
-    const { imapUid: _uid, ...dto } = entry;
-    return dto;
+    const updated = await this.prisma.viatorAlert.update({
+      where: { id },
+      data: { dismissedAt: new Date() },
+    });
+    return this.rowToDto(updated);
   }
 
   async dismissAllNotifications(): Promise<{ updated: number }> {
-    const entries = [...this.pending.values()];
-    for (const entry of entries) {
-      this.dismissed.add(entry.viatorReference);
-      this.pending.delete(entry.viatorReference);
-    }
-    return { updated: entries.length };
+    const result = await this.prisma.viatorAlert.updateMany({
+      where: { dismissedAt: null },
+      data: { dismissedAt: new Date() },
+    });
+    return { updated: result.count };
   }
 
-  private async isViatorReferenceSaved(viatorReference: string): Promise<boolean> {
-    const existing = await this.bookingsService.findByBookingReference(
-      viatorReference,
+  private recentInboxCutoff(): Date {
+    const cutoff = new Date();
+    cutoff.setTime(
+      cutoff.getTime() - VIATOR_INBOX_LOOKBACK_HOURS * 60 * 60 * 1000,
     );
-    return existing != null;
+    return cutoff;
+  }
+
+  private parseEmailForImport(subject: string): {
+    viatorReference: string;
+    pickupDateLabel: string;
+    isTestBooking: boolean;
+  } | null {
+    const trimmed = subject.trim();
+    const testParsed = parseViatorTestBookingSubject(trimmed);
+    if (testParsed && isViatorTestBookingSubject(trimmed)) {
+      return {
+        pickupDateLabel: testParsed.pickupDateLabel,
+        viatorReference: '',
+        isTestBooking: true,
+      };
+    }
+    const parsed = parseViatorNewBookingSubject(trimmed);
+    if (!parsed) {
+      return null;
+    }
+    return { ...parsed, isTestBooking: false };
+  }
+
+  private bumpTestScheduledTimeIfPast(scheduledTimeIso: string): string {
+    let scheduled = parseScheduledTime(scheduledTimeIso);
+    const now = new Date();
+    let guard = 0;
+    while (scheduled.getTime() < now.getTime() && guard < 400) {
+      scheduled = new Date(scheduled.getTime() + 24 * 60 * 60 * 1000);
+      guard += 1;
+    }
+    return scheduled.toISOString();
   }
 
   private async persistViatorBooking(input: {
     viatorReference: string;
     pickupDateLabel: string;
     details: ViatorBookingDetails;
+    isTestBooking?: boolean;
   }): Promise<ViatorPersistResult> {
     const { viatorReference } = input;
     try {
@@ -144,7 +190,14 @@ export class ViatorInboxService implements OnModuleInit {
         };
       }
 
-      const dto = mapViatorToCreateBookingDto(input);
+      let dto = mapViatorToCreateBookingDto(input);
+      if (input.isTestBooking) {
+        dto = {
+          ...dto,
+          scheduledTime: this.bumpTestScheduledTimeIfPast(dto.scheduledTime),
+        };
+        assertPickupNotInPast(parseScheduledTime(dto.scheduledTime));
+      }
       const { booking, created } =
         await this.bookingsService.createFromViator(dto);
       if (created) {
@@ -176,62 +229,248 @@ export class ViatorInboxService implements OnModuleInit {
     }
   }
 
+  private async createAlertForNewBooking(
+    entry: PendingEntry,
+    bookingUuid?: string,
+  ): Promise<ViatorNotificationDto | null> {
+    const existing = await this.prisma.viatorAlert.findUnique({
+      where: { viatorReference: entry.viatorReference },
+    });
+    if (existing) {
+      return null;
+    }
+
+    const {
+      imapUid: _uid,
+      id: _id,
+      subject: _subject,
+      viatorReference: _ref,
+      pickupDateLabel: _label,
+      receivedAt: _receivedAt,
+      isTestBooking,
+      ...bookingFields
+    } = entry;
+    const row = await this.prisma.viatorAlert.create({
+      data: {
+        id: entry.id,
+        viatorReference: entry.viatorReference,
+        subject: entry.subject,
+        pickupDateLabel: entry.pickupDateLabel,
+        receivedAt: new Date(entry.receivedAt),
+        bookingUuid: bookingUuid ?? null,
+        payload: {
+          ...mergeBookingFields(bookingFields),
+          ...(isTestBooking ? { isTestBooking: true } : {}),
+        },
+      },
+    });
+    return this.rowToDto(row);
+  }
+
+  private async fetchEmailSourceFromUid(
+    client: ImapFlow,
+    uid: number,
+  ): Promise<Buffer | undefined> {
+    const timeoutMs = 45_000;
+    try {
+      const fetched = await Promise.race([
+        client.fetchOne(
+          uid,
+          { source: { maxLength: 512 * 1024 } },
+          { uid: true },
+        ),
+        new Promise<undefined>((_, reject) => {
+          setTimeout(
+            () => reject(new Error(`IMAP body fetch timeout (${timeoutMs}ms)`)),
+            timeoutMs,
+          );
+        }),
+      ]);
+      if (fetched && 'source' in fetched && fetched.source) {
+        return Buffer.isBuffer(fetched.source)
+          ? fetched.source
+          : Buffer.from(fetched.source);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Body fetch failed for uid=${uid}: ${message}`);
+    }
+
+    return undefined;
+  }
+
   private async fetchBookingDetailsFromUid(
     client: ImapFlow,
     uid: number,
   ): Promise<ViatorBookingDetails> {
-    const msg = await client.fetchOne(uid, { source: true }, { uid: true });
-    if (!msg || !msg.source) {
+    const source = await this.fetchEmailSourceFromUid(client, uid);
+    if (!source) {
       return {};
     }
-    return await parseViatorEmailBody(msg.source);
+    return parseViatorEmailBody(source);
   }
 
-  async syncFromInbox(
-    trigger: ImapSyncTrigger = 'manual-app',
-  ): Promise<{ added: number; scanned: number }> {
-    if (!isImapConfigured()) {
-      this.logger.debug('Inbox sync skipped (imap config missing)');
-      return { added: 0, scanned: 0 };
+  private async isDuplicateViatorReference(
+    viatorReference: string,
+  ): Promise<boolean> {
+    const existingAlert = await this.prisma.viatorAlert.findUnique({
+      where: { viatorReference },
+      select: { id: true },
+    });
+    if (existingAlert) {
+      return true;
     }
-    if (!this.imapConnection.isConnected()) {
+    const existingBooking = await this.bookingsService.findByBookingReference(
+      viatorReference,
+    );
+    return Boolean(existingBooking);
+  }
+
+  /** Same #BR-TEST email (IMAP uid) is only imported once; each new message gets a new BR-…. */
+  private async isDuplicateTestImapUid(imapUid: number): Promise<boolean> {
+    const existing = await this.prisma.viatorAlert.findFirst({
+      where: {
+        payload: {
+          path: '$.imapUid',
+          equals: imapUid,
+        },
+      },
+      select: { id: true },
+    });
+    return Boolean(existing);
+  }
+
+  /**
+   * Starts an inbox check in the background and returns immediately so other API
+   * requests are not blocked on IMAP.
+   */
+  enqueueInboxCheck(): ViatorInboxCheckEnqueueResponse {
+    if (!isImapConfigured()) {
       throw new ServiceUnavailableException(
-        'IMAP connection is not ready. Wait for reconnect or check IMAP credentials.',
+        'Hostinger mail not configured. Set IMAP_HOST, SMTP_USER, and SMTP_PASS (same mailbox that receives Viator emails).',
       );
     }
 
-    this.logger.debug(`Inbox sync start (trigger=${trigger})`);
+    if (this.inboxCheckRunning) {
+      return {
+        accepted: false,
+        status: 'already_running',
+        lookbackHours: VIATOR_INBOX_LOOKBACK_HOURS,
+        message:
+          'An inbox check is already running. New bookings will appear via GET /viator/notifications when it finishes.',
+      };
+    }
+
+    this.inboxCheckRunning = true;
+    setImmediate(() => {
+      void this.runInboxCheckInBackground();
+    });
+
+    return {
+      accepted: true,
+      status: 'started',
+      lookbackHours: VIATOR_INBOX_LOOKBACK_HOURS,
+      message: `Inbox check started in the background (Viator + #BR-TEST, last ${VIATOR_INBOX_LOOKBACK_HOURS}h). Use GET /viator/notifications for alerts.`,
+    };
+  }
+
+  private async runInboxCheckInBackground(): Promise<void> {
+    // Inbox check outlives the HTTP 202 response; hold a DB connection until import finishes.
+    await this.prisma.acquireRequestConnection();
+    try {
+      await this.runInboxCheckWork();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Could not read Hostinger inbox.';
+      this.logger.warn(`Viator inbox check failed: ${message}`);
+    } finally {
+      this.inboxCheckRunning = false;
+      await this.prisma.releaseRequestConnection();
+    }
+  }
+
+  /** IMAP scan — runs off the request thread; do not await from HTTP handlers. */
+  private async runInboxCheckWork(): Promise<ViatorInboxCheckResult | null> {
+    const cfg = getImapConfig();
+    if (!cfg) {
+      return null;
+    }
+
     const startedAt = Date.now();
-    const result = await this.imapConnection.runExclusive((client) =>
-      this.syncUnreadOnClient(client, trigger),
+    this.logger.log(
+      `Viator inbox check started (lookback=${VIATOR_INBOX_LOOKBACK_HOURS}h, tz=${getBookingTimeZone()})`,
     );
-    this.logger.debug(
-      `Inbox sync done (trigger=${trigger}, scanned=${result.scanned}, added=${result.added}, unread=${this.pending.size}, elapsedMs=${Date.now() - startedAt})`,
+
+    const result = await withImapSession(cfg, async (client) => {
+      const lock = await client.getMailboxLock(cfg.mailbox);
+      try {
+        return await this.syncViatorEmails(client);
+      } finally {
+        lock.release();
+      }
+    });
+
+    this.logger.log(
+      `Viator inbox check done (scanned=${result.scanned}, added=${result.added}, skippedDuplicate=${result.skippedDuplicate}, skippedProduct=${result.skippedProduct}, notifications=${result.notifications.length}, unread=${await this.getUnreadCount()}, elapsedMs=${Date.now() - startedAt})`,
     );
     return result;
   }
 
-  private async syncUnreadOnClient(
-    client: ImapFlow,
-    trigger: ImapSyncTrigger,
-  ): Promise<{ added: number; scanned: number }> {
-    const cfg = getImapConfig();
-    if (!cfg) {
-      return { added: 0, scanned: 0 };
-    }
-
-    let added = 0;
-    let scanned = 0;
-
-    const uids = await client.search({
-      seen: false,
+  private async collectViatorUids(client: ImapFlow): Promise<number[]> {
+    const since = this.recentInboxCutoff();
+    const batch = await client.search({
+      since,
       subject: 'New Booking for',
     });
+    return Array.isArray(batch) ? batch : [];
+  }
 
-    if (!uids || uids.length === 0) {
-      this.logger.debug(`Inbox sync found no unread Viator emails (trigger=${trigger})`);
-      return { added: 0, scanned: 0 };
+  private isWithinLookback(envelopeDate: Date | undefined): boolean {
+    if (!envelopeDate) {
+      return false;
     }
+    return envelopeDate.getTime() >= this.recentInboxCutoff().getTime();
+  }
+
+  private async syncViatorEmails(client: ImapFlow): Promise<{
+    added: number;
+    scanned: number;
+    skippedDuplicate: number;
+    skippedProduct: number;
+    lookbackHours: number;
+    notifications: ViatorNotificationDto[];
+  }> {
+    let added = 0;
+    let scanned = 0;
+    let skippedDuplicate = 0;
+    let skippedProduct = 0;
+    const notifications: ViatorNotificationDto[] = [];
+    const processedRefs = new Set<string>();
+
+    const uids = await this.collectViatorUids(client);
+    this.logger.log(
+      `Inbox check IMAP search returned ${uids.length} candidate message(s) (lookback=${VIATOR_INBOX_LOOKBACK_HOURS}h)`,
+    );
+    if (uids.length === 0) {
+      this.logger.log(
+        `Inbox check found no "New Booking for" emails in the last ${VIATOR_INBOX_LOOKBACK_HOURS}h`,
+      );
+      return {
+        added: 0,
+        scanned: 0,
+        skippedDuplicate: 0,
+        skippedProduct: 0,
+        lookbackHours: VIATOR_INBOX_LOOKBACK_HOURS,
+        notifications,
+      };
+    }
+
+    type EnvelopeRow = {
+      uid: number;
+      subject: string;
+      receivedAt: Date;
+    };
+    const rows: EnvelopeRow[] = [];
 
     for await (const msg of client.fetch(uids, {
       envelope: true,
@@ -239,176 +478,180 @@ export class ViatorInboxService implements OnModuleInit {
     })) {
       scanned += 1;
       const subject = msg.envelope?.subject ?? '';
-      const parsed = parseViatorNewBookingSubject(subject);
-      if (!parsed || msg.uid == null) {
+      const receivedAt = msg.envelope?.date ?? new Date();
+      if (!this.isWithinLookback(receivedAt) || msg.uid == null) {
         continue;
       }
-
-      if (
-        this.pending.has(parsed.viatorReference) ||
-        this.dismissed.has(parsed.viatorReference)
-      ) {
-        continue;
-      }
-
-      if (await this.isViatorReferenceSaved(parsed.viatorReference)) {
-        continue;
-      }
-
-      const details = await this.fetchBookingDetailsFromUid(client, msg.uid);
-
-      const persist = await this.persistViatorBooking({
-        viatorReference: parsed.viatorReference,
-        pickupDateLabel: parsed.pickupDateLabel,
-        details,
-      });
-      if (persist.error) {
-        continue;
-      }
-
-      const receivedAt = (msg.envelope?.date ?? new Date()).toISOString();
-      const entry: PendingEntry = {
-        id: randomUUID(),
-        subject: subject.trim(),
-        viatorReference: parsed.viatorReference,
-        pickupDateLabel: parsed.pickupDateLabel,
-        receivedAt,
-        imapUid: msg.uid,
-        ...mergeBookingFields(details),
-      };
-      this.pending.set(parsed.viatorReference, entry);
-      added += 1;
-      this.logger.log(
-        `New Viator booking (trigger=${trigger}): ${parsed.viatorReference}`,
-      );
+      rows.push({ uid: msg.uid, subject, receivedAt });
     }
 
-    return { added, scanned };
-  }
+    rows.sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime());
 
-  async getLatestViatorMail(): Promise<ViatorLatestMailDto> {
-    if (!isImapConfigured()) {
-      throw new ServiceUnavailableException(
-        'Hostinger mail not configured. Set IMAP_HOST, SMTP_USER, and SMTP_PASS.',
-      );
-    }
-    if (!this.imapConnection.isConnected()) {
-      throw new ServiceUnavailableException(
-        'IMAP connection is not ready. Wait for reconnect or check IMAP credentials.',
-      );
-    }
-
-    try {
-      return await this.imapConnection.runExclusive((client) =>
-        this.getLatestViatorMailOnClient(client),
-      );
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Could not read Hostinger inbox.';
-      this.logger.warn(`getLatestViatorMail failed: ${message}`);
-      throw new ServiceUnavailableException(
-        `Could not read email inbox (${message}). Check IMAP credentials and Hostinger IMAP access.`,
-      );
-    }
-  }
-
-  private async getLatestViatorMailOnClient(
-    client: ImapFlow,
-  ): Promise<ViatorLatestMailDto> {
-    const cfg = getImapConfig();
-    if (!cfg) {
-      throw new ServiceUnavailableException(
-        'Hostinger mail not configured. Set IMAP_HOST, SMTP_USER, and SMTP_PASS.',
-      );
-    }
-
-    let latestUid: number | undefined;
-    let latest: {
-      subject: string;
-      viatorReference: string;
-      pickupDateLabel: string;
-      receivedAt: Date;
-      from: string;
-    } | null = null;
-
-    const since = new Date();
-    since.setDate(since.getDate() - 90);
-
-    const uids = await client.search({
-      since,
-      subject: 'New Booking for',
-    });
-
-    if (!uids || uids.length === 0) {
-      return {
-        found: false,
-        message:
-          'No emails with subject "New Booking for …" in the last 90 days.',
-      };
-    }
-
-    for await (const msg of client.fetch(uids, {
-      envelope: true,
-      uid: true,
-    })) {
-      const subject = msg.envelope?.subject ?? '';
-      const parsed = parseViatorNewBookingSubject(subject);
+    for (const row of rows) {
+      const { uid, subject, receivedAt } = row;
+      const parsed = this.parseEmailForImport(subject);
       if (!parsed) {
         continue;
       }
 
-      const receivedAt = msg.envelope?.date ?? new Date(0);
-      if (latest && receivedAt.getTime() <= latest.receivedAt.getTime()) {
+      if (!parsed.isTestBooking) {
+        if (processedRefs.has(parsed.viatorReference)) {
+          skippedDuplicate += 1;
+          this.logger.debug(
+            `Skip duplicate in batch: ${parsed.viatorReference}`,
+          );
+          continue;
+        }
+        processedRefs.add(parsed.viatorReference);
+      }
+
+      if (parsed.isTestBooking) {
+        if (await this.isDuplicateTestImapUid(uid)) {
+          skippedDuplicate += 1;
+          this.logger.log(
+            `Skip test email (already imported for IMAP uid=${uid})`,
+          );
+          continue;
+        }
+      } else if (await this.isDuplicateViatorReference(parsed.viatorReference)) {
+        skippedDuplicate += 1;
+        this.logger.log(
+          `Skip Viator booking (already imported): ${parsed.viatorReference}`,
+        );
         continue;
       }
 
-      const from = (msg.envelope?.from ?? [])
-        .map((a) => a.address ?? '')
-        .filter(Boolean)
-        .join(', ');
-
-      latestUid = msg.uid;
-      latest = {
+      const outcome = await this.processViatorEmail(client, {
+        uid,
         subject: subject.trim(),
-        viatorReference: parsed.viatorReference,
-        pickupDateLabel: parsed.pickupDateLabel,
+        parsed,
         receivedAt,
-        from,
-      };
+        isTestBooking: parsed.isTestBooking,
+      });
+
+      if (outcome === 'duplicate') {
+        skippedDuplicate += 1;
+        this.logger.log(
+          `Skip duplicate after import attempt: ${parsed.viatorReference}`,
+        );
+      } else if (outcome === 'ignored_product') {
+        skippedProduct += 1;
+      } else if (outcome?.dto) {
+        notifications.push(outcome.dto);
+        added += 1;
+        this.logger.log(
+          parsed.isTestBooking
+            ? `Viator test booking: ${parsed.viatorReference}`
+            : `New Viator booking: ${parsed.viatorReference}`,
+        );
+      }
     }
-
-    if (!latest || latestUid == null) {
-      return {
-        found: false,
-        message:
-          'Emails matched the search but none had a Viator booking subject (New Booking for … (#BR-…)).',
-      };
-    }
-
-    const details = await this.fetchBookingDetailsFromUid(client, latestUid);
-
-    const persist = await this.persistViatorBooking({
-      viatorReference: latest.viatorReference,
-      pickupDateLabel: latest.pickupDateLabel,
-      details,
-    });
 
     return {
-      found: true,
-      subject: latest.subject,
-      viatorReference: latest.viatorReference,
-      pickupDateLabel: latest.pickupDateLabel,
-      receivedAt: latest.receivedAt.toISOString(),
-      from: latest.from || undefined,
-      savedToDb: persist.savedToDb,
-      alreadyInDatabase: persist.alreadyInDatabase,
-      bookingUuid: persist.bookingUuid,
-      ...(persist.error
-        ? {
-            message: `Email read but could not save booking: ${persist.error}`,
-          }
-        : {}),
+      added,
+      scanned,
+      skippedDuplicate,
+      skippedProduct,
+      lookbackHours: VIATOR_INBOX_LOOKBACK_HOURS,
+      notifications,
+    };
+  }
+
+  private async processViatorEmail(
+    client: ImapFlow,
+    input: {
+      uid: number;
+      subject: string;
+      parsed: { viatorReference: string; pickupDateLabel: string };
+      receivedAt: Date;
+      isTestBooking?: boolean;
+    },
+  ): Promise<
+    { dto: ViatorNotificationDto } | 'duplicate' | 'ignored_product' | null
+  > {
+    const { parsed } = input;
+
+    if (input.isTestBooking) {
+      if (await this.isDuplicateTestImapUid(input.uid)) {
+        return 'duplicate';
+      }
+    } else if (await this.isDuplicateViatorReference(parsed.viatorReference)) {
+      return 'duplicate';
+    }
+
+    const source = await this.fetchEmailSourceFromUid(client, input.uid);
+    if (!source) {
+      this.logger.warn(
+        `Viator import skipped (no email body): uid=${input.uid}`,
+      );
+      return null;
+    }
+
+    let viatorReference = parsed.viatorReference;
+    if (input.isTestBooking) {
+      const fromBody = await parseViatorBookingReferenceFromBody(source, {
+        allowTestMarker: true,
+      });
+      if (!fromBody) {
+        this.logger.warn(
+          `Viator test import skipped (no Booking Reference in body): uid=${input.uid}`,
+        );
+        return null;
+      }
+      viatorReference = fromBody;
+      parsed.viatorReference = fromBody;
+      if (await this.isDuplicateViatorReference(viatorReference)) {
+        return 'duplicate';
+      }
+    }
+
+    const details = await parseViatorEmailBody(source);
+
+    if (!isAllowedViatorProductCode(details.productCode)) {
+      this.logger.log(
+        `Skip Viator email (product not allowed): ${details.productCode ?? 'missing'} ref=${viatorReference} uid=${input.uid}`,
+      );
+      return 'ignored_product';
+    }
+
+    const persist = await this.persistViatorBooking({
+      viatorReference,
+      pickupDateLabel: parsed.pickupDateLabel,
+      details,
+      isTestBooking: input.isTestBooking,
+    });
+    if (persist.error) {
+      this.logger.warn(
+        `Viator import failed for ${viatorReference}: ${persist.error}`,
+      );
+      return null;
+    }
+    if (!persist.savedToDb && !persist.alreadyInDatabase) {
+      return null;
+    }
+    if (!persist.savedToDb && persist.alreadyInDatabase) {
+      return 'duplicate';
+    }
+
+    const entry: PendingEntry = {
+      id: randomUUID(),
+      subject: input.subject,
+      viatorReference,
+      pickupDateLabel: parsed.pickupDateLabel,
+      receivedAt: input.receivedAt.toISOString(),
+      imapUid: input.uid,
+      isTestBooking: input.isTestBooking,
       ...mergeBookingFields(details),
     };
+
+    const dto = await this.createAlertForNewBooking(
+      entry,
+      persist.bookingUuid,
+    );
+    if (!dto) {
+      return 'duplicate';
+    }
+
+    return { dto };
   }
 }

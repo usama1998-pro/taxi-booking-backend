@@ -3,34 +3,10 @@
  * (defaults to `process.env.TZ`, e.g. Europe/Madrid from bootstrap-env).
  */
 
-function zonedCalendarDayKey(d: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(d);
-}
-
-/** Smallest UTC instant in [hintMs - 96h, hintMs + 96h] on that calendar day in `timeZone`. */
-function startOfZonedDayWithKey(
-  targetKey: string,
-  hintMs: number,
-  timeZone: string,
-): Date {
-  let lo = hintMs - 96 * 3600_000;
-  let hi = hintMs + 96 * 3600_000;
-  while (lo < hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    const k = zonedCalendarDayKey(new Date(mid), timeZone);
-    if (k < targetKey) {
-      lo = mid + 1;
-    } else {
-      hi = mid;
-    }
-  }
-  return new Date(lo);
-}
+import {
+  startOfZonedDayWithKey,
+  zonedCalendarDayKey,
+} from './booking-zoned-time';
 
 /**
  * `startOfToday`: first instant of "today" in the zone.

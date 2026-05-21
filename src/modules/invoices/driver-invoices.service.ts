@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InvoiceAddressKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/database/prisma.service';
+import { activeBookingWhere } from '../bookings/booking-active.where';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { CreateDriverInvoiceDto } from './dto/create-driver-invoice.dto';
 import { ListDriverInvoicesQueryDto } from './dto/list-driver-invoices-query.dto';
@@ -104,6 +105,7 @@ export class DriverInvoicesService {
       where: {
         bookingReference: ref,
         driverId: user.sub,
+        ...activeBookingWhere,
       },
       select: { price: true },
     });
@@ -122,6 +124,7 @@ export class DriverInvoicesService {
       where: {
         bookingReference: dto.bookingReference.trim(),
         driverId: user.sub,
+        ...activeBookingWhere,
       },
       select: {
         uuid: true,

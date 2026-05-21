@@ -23,3 +23,10 @@ export function parseViatorNewBookingSubject(
 export function isViatorNewBookingSubject(subject: string): boolean {
   return parseViatorNewBookingSubject(subject) !== null;
 }
+
+export {
+  generateViatorTestBookingReference,
+  isViatorTestBookingSubject,
+  parseViatorTestBookingSubject,
+  VIATOR_TEST_SUBJECT_MARKER,
+} from './viator-test-email';

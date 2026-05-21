@@ -4,12 +4,9 @@ export type HostingerInboxConfig = {
   user: string;
   pass: string;
   mailbox: string;
-  /** Backup resync when IDLE misses mail or connection drops. */
-  fallbackSyncIntervalMs: number;
 };
 
 const DEFAULT_IMAP_PORT = 993;
-const DEFAULT_FALLBACK_SYNC_MS = 5 * 60_000;
 
 function readSharedMailboxCredentials(): { user: string; pass: string } | null {
   const user = process.env.IMAP_USER?.trim() || process.env.SMTP_USER?.trim();
@@ -61,10 +58,6 @@ export function getHostingerInboxConfig(): HostingerInboxConfig | null {
 
   const portRaw = process.env.IMAP_PORT?.trim();
   const port = portRaw ? Number(portRaw) : DEFAULT_IMAP_PORT;
-  const fallbackRaw = process.env.IMAP_FALLBACK_SYNC_MS?.trim();
-  const fallbackSyncIntervalMs = fallbackRaw
-    ? Number(fallbackRaw)
-    : DEFAULT_FALLBACK_SYNC_MS;
 
   return {
     host,
@@ -72,9 +65,6 @@ export function getHostingerInboxConfig(): HostingerInboxConfig | null {
     user: auth.user,
     pass: auth.pass,
     mailbox: process.env.IMAP_MAILBOX?.trim() || 'INBOX',
-    fallbackSyncIntervalMs: Number.isFinite(fallbackSyncIntervalMs)
-      ? fallbackSyncIntervalMs
-      : DEFAULT_FALLBACK_SYNC_MS,
   };
 }
 

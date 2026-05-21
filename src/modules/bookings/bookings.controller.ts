@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -72,6 +74,66 @@ export class BookingsController {
   }
 
   @ApiAccessTokenInSwagger()
+  @Get('trash')
+  @ApiOperation({
+    summary: 'List trashed bookings (paginated)',
+    description:
+      'Returns soft-deleted bookings only. Paginated with `page` (1-based) and `pageSize` (default 20, max 100). Ordered by `deletedAt` descending (most recently deleted first). Each row includes `deletedAt`.',
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        data: { type: 'array', items: { type: 'object' } },
+        page: { type: 'integer', example: 1 },
+        pageSize: { type: 'integer', example: 20 },
+        total: { type: 'integer', example: 5 },
+        totalPages: { type: 'integer', example: 1 },
+      },
+    },
+  })
+  findTrash(
+    @Query() query: ListBookingsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.bookingsService.findTrash(user, query);
+  }
+
+  @Public()
+  @Post('trash/purge')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Purge trashed bookings (batch)',
+    description:
+      'Hard-deletes up to 30 trashed bookings (oldest first). For cron/scheduler. Respects optional env BOOKING_TRASH_RETENTION_DAYS.',
+  })
+  purgeTrashBatch() {
+    return this.bookingsService.purgeTrashBatch();
+  }
+
+  @ApiAccessTokenInSwagger()
+  @Post('trash/clear')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Clear trash (permanent delete all)',
+    description:
+      'Hard-deletes every trashed booking eligible for purge (same rules as purge batch). Returns count and uuids removed.',
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        purged: { type: 'integer', example: 12 },
+        uuids: { type: 'array', items: { type: 'string', format: 'uuid' } },
+        remainingInTrash: { type: 'integer', example: 0 },
+      },
+    },
+  })
+  clearTrash() {
+    return this.bookingsService.clearTrash();
+  }
+
+  @ApiAccessTokenInSwagger()
   @Get(':uuid')
   @ApiOperation({
     summary: 'Get booking by uuid',
@@ -116,16 +178,16 @@ export class BookingsController {
   @ApiAccessTokenInSwagger()
   @Delete(':uuid')
   @ApiOperation({
-    summary: 'Delete booking',
+    summary: 'Delete booking (move to trash)',
     description:
-      'Deletes booking by `uuid`.',
+      'Soft-deletes booking by `uuid` (moves to trash). Permanent removal runs via POST /bookings/trash/purge.',
   })
   @ApiOkResponse({
     schema: {
       type: 'object',
       properties: {
         success: { type: 'boolean', example: true },
-        message: { type: 'string', example: 'Booking deleted successfully.' },
+        message: { type: 'string', example: 'Booking moved to trash.' },
         uuid: { type: 'string', format: 'uuid' },
       },
     },
@@ -141,7 +203,8 @@ export class BookingsController {
   @Delete(':uuid/remove')
   @ApiOperation({
     summary: 'Remove reservation',
-    description: 'Alias route to delete reservation by booking `uuid`.',
+    description:
+      'Alias route to soft-delete reservation by booking `uuid` (move to trash).',
   })
   removeReservation(
     @Param('uuid', ParseUUIDPipe) uuid: string,

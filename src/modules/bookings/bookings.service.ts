@@ -24,6 +24,13 @@ import {
 } from './dto/list-bookings-query.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
 import { MailService } from '../mail/mail.service';
+import { activeBookingWhere } from './booking-active.where';
+import { reservedBookingReferenceWhere } from './booking-reference.where';
+import { trashedBookingWhere } from './booking-trash.where';
+import {
+  BOOKING_TRASH_PURGE_BATCH_SIZE,
+  bookingTrashRetentionDays,
+} from './booking-trash.constants';
 
 const bookingInclude = {
   user: {
@@ -52,8 +59,8 @@ type BookingWithRelations = Prisma.BookingGetPayload<{
   include: typeof bookingInclude;
 }>;
 
-/** Booking JSON for APIs: no internal `id`; clients use `uuid`. */
-export type BookingPublic = Omit<BookingWithRelations, 'id'>;
+/** Booking JSON for APIs: no internal `id` or trash metadata; clients use `uuid`. */
+export type BookingPublic = Omit<BookingWithRelations, 'id' | 'deletedAt'>;
 
 export type PaginatedBookings = {
   data: BookingPublic[];
@@ -61,6 +68,23 @@ export type PaginatedBookings = {
   pageSize: number;
   total: number;
   totalPages: number;
+};
+
+/** Trashed booking row for admin/dispatcher trash list. */
+export type BookingTrashPublic = BookingPublic & { deletedAt: string };
+
+export type PaginatedTrashBookings = {
+  data: BookingTrashPublic[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+export type ClearTrashResult = {
+  purged: number;
+  uuids: string[];
+  remainingInTrash: number;
 };
 
 export type BookingCreateResult = BookingPublic & {
@@ -79,28 +103,102 @@ export class BookingsService {
   ) {}
   private readonly logger = new Logger(BookingsService.name);
 
+  private viatorReferencesForBooking(bookingReference: string): string[] {
+    const refs = new Set<string>([bookingReference]);
+    const trashIdx = bookingReference.indexOf('#trash-');
+    if (trashIdx > 0) {
+      refs.add(bookingReference.slice(0, trashIdx));
+    }
+    return [...refs];
+  }
+
+  /** Active booking or trashed row with the same reference (blocks re-use until purge). */
+  async isBookingReferenceReserved(
+    bookingReference: string,
+    excludeUuid?: string,
+  ): Promise<boolean> {
+    const ref = bookingReference.trim();
+    if (!ref) {
+      return false;
+    }
+    const row = await this.prisma.booking.findFirst({
+      where: {
+        ...reservedBookingReferenceWhere(ref),
+        ...(excludeUuid ? { uuid: { not: excludeUuid } } : {}),
+      },
+      select: { id: true },
+    });
+    return Boolean(row);
+  }
+
+  private async isBookingReferenceReservedInTx(
+    tx: Prisma.TransactionClient,
+    bookingReference: string,
+  ): Promise<boolean> {
+    const ref = bookingReference.trim();
+    if (!ref) {
+      return false;
+    }
+    const row = await tx.booking.findFirst({
+      where: reservedBookingReferenceWhere(ref),
+      select: { id: true },
+    });
+    return Boolean(row);
+  }
+
+  private async findActiveBookingByUuid(
+    uuid: string,
+  ): Promise<BookingWithRelations | null> {
+    return this.prisma.booking.findFirst({
+      where: { uuid, ...activeBookingWhere },
+      include: bookingInclude,
+    });
+  }
+
+  private async hardDeleteBookingInTx(
+    tx: Prisma.TransactionClient,
+    booking: Pick<
+      BookingWithRelations,
+      'uuid' | 'bookingReference' | 'driverId'
+    >,
+  ): Promise<void> {
+    const viatorRefs = this.viatorReferencesForBooking(booking.bookingReference);
+    await tx.viatorAlert.deleteMany({
+      where: {
+        OR: [
+          { bookingUuid: booking.uuid },
+          { viatorReference: { in: viatorRefs } },
+        ],
+      },
+    });
+    await tx.booking.delete({ where: { uuid: booking.uuid } });
+    if (booking.driverId) {
+      const remaining = await tx.booking.count({
+        where: { driverId: booking.driverId, ...activeBookingWhere },
+      });
+      if (remaining === 0) {
+        await tx.driver.update({
+          where: { id: booking.driverId },
+          data: { isAvailable: true },
+        });
+      }
+    }
+  }
+
   private async allocateBookingReference(
     tx: Prisma.TransactionClient,
     requested?: string | null,
   ): Promise<string> {
     const trimmed = requested?.trim();
     if (trimmed) {
-      const taken = await tx.booking.findFirst({
-        where: { bookingReference: trimmed },
-        select: { id: true },
-      });
-      if (taken) {
+      if (await this.isBookingReferenceReservedInTx(tx, trimmed)) {
         throw new BadRequestException('That booking reference is already in use');
       }
       return trimmed;
     }
     for (let i = 0; i < 24; i++) {
       const candidate = `BK-${randomBytes(4).toString('hex').toUpperCase()}`;
-      const taken = await tx.booking.findFirst({
-        where: { bookingReference: candidate },
-        select: { id: true },
-      });
-      if (!taken) {
+      if (!(await this.isBookingReferenceReservedInTx(tx, candidate))) {
         return candidate;
       }
     }
@@ -151,9 +249,30 @@ export class BookingsService {
   }
 
   private toPublicBooking(row: BookingWithRelations): BookingPublic {
-    const { id: _id, ...rest } = row;
+    const { id: _id, deletedAt: _deletedAt, ...rest } = row;
     void _id;
+    void _deletedAt;
     return rest;
+  }
+
+  private toPublicTrashBooking(row: BookingWithRelations): BookingTrashPublic {
+    return {
+      ...this.toPublicBooking(row),
+      deletedAt: row.deletedAt?.toISOString() ?? new Date(0).toISOString(),
+    };
+  }
+
+  private trashPurgeWhere(): Prisma.BookingWhereInput {
+    const retentionDays = bookingTrashRetentionDays();
+    if (retentionDays > 0) {
+      const deletedBefore = new Date(
+        Date.now() - retentionDays * 24 * 60 * 60 * 1000,
+      );
+      return {
+        deletedAt: { not: null, lt: deletedBefore },
+      };
+    }
+    return { ...trashedBookingWhere };
   }
 
   private assertCanViewBooking(
@@ -206,6 +325,10 @@ export class BookingsService {
     }
   }
 
+  /**
+   * Finds a booking by reference on active rows or trash (same table).
+   * Used for Viator idempotency — a trashed reference still counts as existing.
+   */
   async findByBookingReference(
     bookingReference: string,
   ): Promise<BookingPublic | null> {
@@ -214,8 +337,9 @@ export class BookingsService {
       return null;
     }
     const booking = await this.prisma.booking.findFirst({
-      where: { bookingReference: ref },
+      where: reservedBookingReferenceWhere(ref),
       include: bookingInclude,
+      orderBy: [{ deletedAt: { sort: 'asc', nulls: 'first' } }],
     });
     return booking ? this.toPublicBooking(booking) : null;
   }
@@ -377,10 +501,7 @@ export class BookingsService {
 
   /** Public booking lookup by uuid (no auth) — used by mail endpoints. */
   async findOnePublicByUuid(uuid: string): Promise<BookingPublic> {
-    const booking = await this.prisma.booking.findUnique({
-      where: { uuid },
-      include: bookingInclude,
-    });
+    const booking = await this.findActiveBookingByUuid(uuid);
     if (!booking) {
       throw new NotFoundException(`Booking ${uuid} not found`);
     }
@@ -391,7 +512,7 @@ export class BookingsService {
     _requester: AuthenticatedUser,
     query: ListBookingsQueryDto,
   ): Promise<PaginatedBookings> {
-    const baseWhere: Prisma.BookingWhereInput = {};
+    const baseWhere: Prisma.BookingWhereInput = { ...activeBookingWhere };
 
     const terminalOr: Prisma.BookingWhereInput = {
       OR: [
@@ -463,14 +584,42 @@ export class BookingsService {
     };
   }
 
+  async findTrash(
+    _requester: AuthenticatedUser,
+    query: ListBookingsQueryDto,
+  ): Promise<PaginatedTrashBookings> {
+    const where: Prisma.BookingWhereInput = { ...trashedBookingWhere };
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const skip = (page - 1) * pageSize;
+
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.booking.count({ where }),
+      this.prisma.booking.findMany({
+        where,
+        orderBy: { deletedAt: 'desc' },
+        skip,
+        take: pageSize,
+        include: bookingInclude,
+      }),
+    ]);
+
+    const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+
+    return {
+      data: rows.map((b) => this.toPublicTrashBooking(b)),
+      page,
+      pageSize,
+      total,
+      totalPages,
+    };
+  }
+
   async findOne(
     uuid: string,
     requester: AuthenticatedUser,
   ): Promise<BookingPublic> {
-    const booking = await this.prisma.booking.findUnique({
-      where: { uuid },
-      include: bookingInclude,
-    });
+    const booking = await this.findActiveBookingByUuid(uuid);
     if (!booking) {
       throw new NotFoundException(`Booking ${uuid} not found`);
     }
@@ -648,11 +797,7 @@ export class BookingsService {
       if (!ref) {
         throw new BadRequestException('bookingReference cannot be empty');
       }
-      const clash = await this.prisma.booking.findFirst({
-        where: { bookingReference: ref, uuid: { not: uuid } },
-        select: { id: true },
-      });
-      if (clash) {
+      if (await this.isBookingReferenceReserved(ref, uuid)) {
         throw new BadRequestException('That booking reference is already in use');
       }
       data.bookingReference = ref;
@@ -677,6 +822,7 @@ export class BookingsService {
           where: {
             driverId: booking.driverId,
             uuid: { not: uuid },
+            ...activeBookingWhere,
             NOT: {
               OR: [
                 { status: 'completed' },
@@ -704,10 +850,7 @@ export class BookingsService {
     uuid: string,
     requester: AuthenticatedUser,
   ): Promise<BookingPublic> {
-    const booking = await this.prisma.booking.findUnique({
-      where: { uuid },
-      include: bookingInclude,
-    });
+    const booking = await this.findActiveBookingByUuid(uuid);
     if (!booking) {
       throw new NotFoundException(`Booking ${uuid} not found`);
     }
@@ -734,22 +877,31 @@ export class BookingsService {
     uuid: string,
     requester: AuthenticatedUser,
   ): Promise<{ success: true; message: string; uuid: string }> {
-    const booking = await this.prisma.booking.findUnique({
-      where: { uuid },
-      include: bookingInclude,
-    });
+    const booking = await this.findActiveBookingByUuid(uuid);
     if (!booking) {
       throw new NotFoundException(`Booking ${uuid} not found`);
     }
     this.assertCanDeleteBooking(booking, requester);
 
     const driverId = booking.driverId;
+    const originalReference = booking.bookingReference;
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.booking.delete({ where: { uuid } });
+      await tx.viatorAlert.deleteMany({
+        where: {
+          OR: [
+            { bookingUuid: uuid },
+            { viatorReference: originalReference },
+          ],
+        },
+      });
+      await tx.booking.update({
+        where: { uuid },
+        data: { deletedAt: new Date() },
+      });
       if (driverId) {
         const remaining = await tx.booking.count({
-          where: { driverId },
+          where: { driverId, ...activeBookingWhere },
         });
         if (remaining === 0) {
           await tx.driver.update({
@@ -762,8 +914,102 @@ export class BookingsService {
 
     return {
       success: true,
-      message: 'Booking deleted successfully.',
+      message: 'Booking moved to trash.',
       uuid,
+    };
+  }
+
+  /**
+   * Permanently deletes up to {@link BOOKING_TRASH_PURGE_BATCH_SIZE} trashed bookings
+   * (oldest first). Intended for an external scheduler — same pattern as Viator inbox check.
+   */
+  async purgeTrashBatch(): Promise<{
+    purged: number;
+    batchSize: number;
+    uuids: string[];
+    remainingInTrash: number;
+  }> {
+    const where = this.trashPurgeWhere();
+
+    const candidates = await this.prisma.booking.findMany({
+      where,
+      orderBy: { deletedAt: 'asc' },
+      take: BOOKING_TRASH_PURGE_BATCH_SIZE,
+      select: {
+        uuid: true,
+        bookingReference: true,
+        driverId: true,
+      },
+    });
+
+    if (candidates.length === 0) {
+      const remainingInTrash = await this.prisma.booking.count({ where });
+      return {
+        purged: 0,
+        batchSize: BOOKING_TRASH_PURGE_BATCH_SIZE,
+        uuids: [],
+        remainingInTrash,
+      };
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const row of candidates) {
+        await this.hardDeleteBookingInTx(tx, row);
+      }
+    });
+
+    const remainingInTrash = await this.prisma.booking.count({ where });
+
+    this.logger.log(
+      `Trash purge batch: removed ${candidates.length} booking(s); ${remainingInTrash} still in trash`,
+    );
+
+    return {
+      purged: candidates.length,
+      batchSize: BOOKING_TRASH_PURGE_BATCH_SIZE,
+      uuids: candidates.map((r) => r.uuid),
+      remainingInTrash,
+    };
+  }
+
+  /** Permanently deletes all eligible trashed bookings (flush trash). */
+  async clearTrash(): Promise<ClearTrashResult> {
+    const where = this.trashPurgeWhere();
+    const candidates = await this.prisma.booking.findMany({
+      where,
+      orderBy: { deletedAt: 'asc' },
+      select: {
+        uuid: true,
+        bookingReference: true,
+        driverId: true,
+      },
+    });
+
+    if (candidates.length === 0) {
+      return { purged: 0, uuids: [], remainingInTrash: 0 };
+    }
+
+    const uuids: string[] = [];
+    for (let i = 0; i < candidates.length; i += BOOKING_TRASH_PURGE_BATCH_SIZE) {
+      const chunk = candidates.slice(i, i + BOOKING_TRASH_PURGE_BATCH_SIZE);
+      await this.prisma.$transaction(async (tx) => {
+        for (const row of chunk) {
+          await this.hardDeleteBookingInTx(tx, row);
+          uuids.push(row.uuid);
+        }
+      });
+    }
+
+    const remainingInTrash = await this.prisma.booking.count({ where });
+
+    this.logger.log(
+      `Trash cleared: permanently removed ${uuids.length} booking(s); ${remainingInTrash} still in trash`,
+    );
+
+    return {
+      purged: uuids.length,
+      uuids,
+      remainingInTrash,
     };
   }
 }

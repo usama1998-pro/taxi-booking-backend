@@ -1,15 +1,16 @@
 import {
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
   Query,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ApiAccessTokenInSwagger } from '../../core/swagger/api-access-token.decorator';
-import { isImapConfigured } from './viator-inbox.config';
+import { Public } from '../auth/decorators/public.decorator';
 import { ViatorInboxService } from './viator-inbox.service';
 
 @ApiTags('viator')
@@ -18,11 +19,23 @@ import { ViatorInboxService } from './viator-inbox.service';
 export class ViatorInboxController {
   constructor(private readonly viatorInbox: ViatorInboxService) {}
 
+  @Public()
+  @Post('inbox/check')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Check Hostinger inbox for new Viator booking emails (background)',
+    description:
+      'Returns immediately (HTTP 202) and runs IMAP in the background. Imports real Viator mail and #BR-TEST test mail from the lookback window (default 6h, env VIATOR_INBOX_LOOKBACK_HOURS). Only emails whose Product Code is on the allowed list are saved; others are ignored. Duplicate booking references are skipped. Intended for an external cron/scheduler — no authentication required.',
+  })
+  checkInbox() {
+    return this.viatorInbox.enqueueInboxCheck();
+  }
+
   @Get('notifications')
   @ApiOperation({
     summary: 'List new Viator booking alerts',
     description:
-      'Reads your Hostinger mailbox via IMAP (not stored in DB). Only unread emails whose subject matches Viator new bookings, e.g. New Booking for Thu, May 28, 2026 (#BR-1399266959)',
+      'Unread alerts created when POST /viator/inbox/check saves a new booking. The driver app polls this and shows local notifications.',
   })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   list(@Query('limit') limit?: string) {
@@ -34,8 +47,8 @@ export class ViatorInboxController {
 
   @Get('notifications/unread-count')
   @ApiOperation({ summary: 'Count of new unread Viator alerts' })
-  unreadCount() {
-    return { count: this.viatorInbox.getUnreadCount() };
+  async unreadCount() {
+    return { count: await this.viatorInbox.getUnreadCount() };
   }
 
   @Patch('notifications/read-all')
@@ -56,30 +69,5 @@ export class ViatorInboxController {
   })
   markRead(@Param('id') id: string) {
     return this.viatorInbox.dismissNotification(id);
-  }
-
-  @Get('inbox/latest')
-  @ApiOperation({
-    summary: 'Latest Viator new-booking email (test)',
-    description:
-      'Reads Hostinger IMAP and returns the most recent email matching Viator new-booking subject. Does not mark as read.',
-  })
-  getLatest() {
-    return this.viatorInbox.getLatestViatorMail();
-  }
-
-  @Post('inbox/sync')
-  @ApiOperation({
-    summary: 'Sync Hostinger inbox now for new Viator booking emails',
-    description:
-      'Uses the persistent IMAP IDLE connection. Requires the backend IMAP listener to be connected.',
-  })
-  async syncNow() {
-    if (!isImapConfigured()) {
-      throw new ServiceUnavailableException(
-        'Hostinger mail not configured. Set IMAP_HOST, SMTP_USER, and SMTP_PASS (same mailbox that receives Viator emails).',
-      );
-    }
-    return this.viatorInbox.syncFromInbox('manual-api');
   }
 }
