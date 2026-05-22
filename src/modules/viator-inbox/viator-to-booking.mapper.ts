@@ -2,6 +2,10 @@ import { normalizePhoneNumber } from '../../common/utils/phone.util';
 import type { CreateBookingDto } from '../bookings/dto/create-booking.dto';
 import type { ViatorBookingDetails } from './parse-viator-email-body';
 import {
+  isCityToCruiseProductCode,
+  isCruiseToCityProductCode,
+} from './viator-allowed-products';
+import {
   parseViatorPassengerCount,
   parseViatorScheduledTimeIso,
   viatorGuestEmail,
@@ -109,6 +113,44 @@ function isAirportPickup(details: ViatorBookingDetails): boolean {
   return AIRPORT_PATTERN.test(details.pickupLocation ?? '');
 }
 
+function combineCruiseShipAndPortLabel(
+  ship: string | undefined,
+  port: string | undefined,
+): string | undefined {
+  const shipTrim = ship?.trim();
+  const portTrim = port?.trim();
+  if (shipTrim && portTrim && !portTrim.toLowerCase().includes(shipTrim.toLowerCase())) {
+    return `${shipTrim} — ${portTrim}`;
+  }
+  return shipTrim || portTrim;
+}
+
+/** Cruise ship → city: ship name (and optional port) in pickup; city drop-off from email. */
+export function resolveViatorPickupLocationLabel(
+  details: ViatorBookingDetails,
+): string | undefined {
+  if (!isCruiseToCityProductCode(details.productCode)) {
+    return details.pickupLocation;
+  }
+  return combineCruiseShipAndPortLabel(
+    details.cruiseShipName,
+    details.pickupLocation,
+  );
+}
+
+/** City → cruise: city/hotel pickup from email; ship name (and optional port) in drop-off. */
+export function resolveViatorDropoffLocationLabel(
+  details: ViatorBookingDetails,
+): string | undefined {
+  if (!isCityToCruiseProductCode(details.productCode)) {
+    return details.dropoffLocation;
+  }
+  return combineCruiseShipAndPortLabel(
+    details.cruiseShipName,
+    details.dropoffLocation,
+  );
+}
+
 function buildFlightInfo(details: ViatorBookingDetails): {
   airline?: string;
   flightNo?: string;
@@ -143,12 +185,15 @@ export function mapViatorToCreateBookingDto(input: {
   const customerName = resolveLeadTravelerCustomerName(details);
 
   const airportPickup = isAirportPickup(details);
+  const cruiseToCity = isCruiseToCityProductCode(details.productCode);
   const flight = buildFlightInfo(details);
+  const pickupLabel = resolveViatorPickupLocationLabel(details);
+  const dropoffLabel = resolveViatorDropoffLocationLabel(details);
 
   const scheduledTime = parseViatorScheduledTimeIso(pickupDateLabel, {
     arrivalTime: details.arrivalTime,
     departureTime: details.departureTime,
-    isAirportPickup: airportPickup,
+    isAirportPickup: airportPickup || cruiseToCity,
   });
 
   const passengerCount = parseViatorPassengerCount(details.travelers);
@@ -160,14 +205,11 @@ export function mapViatorToCreateBookingDto(input: {
       details.email?.trim() || viatorGuestEmail(viatorReference),
     ),
     customerPhone: truncateDbString(phone),
-    pickupLocation: toPickupLocationJson(details.pickupLocation, 'Pickup TBC', {
+    pickupLocation: toPickupLocationJson(pickupLabel, 'Pickup TBC', {
       airline: flight.airline,
       flightNo: flight.flightNo,
     }),
-    dropoffLocation: toDropoffLocationJson(
-      details.dropoffLocation,
-      'Drop-off TBC',
-    ),
+    dropoffLocation: toDropoffLocationJson(dropoffLabel, 'Drop-off TBC'),
     scheduledTime,
     price: 0,
     status: 'PENDING',

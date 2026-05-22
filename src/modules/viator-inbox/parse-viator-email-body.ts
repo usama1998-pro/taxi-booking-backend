@@ -11,6 +11,7 @@ export type ViatorBookingDetails = {
   email?: string;
   pickupLocation?: string;
   dropoffLocation?: string;
+  cruiseShipName?: string;
   travelers?: string;
   language?: string;
   specialRequirements?: string;
@@ -40,7 +41,8 @@ const VIATOR_INLINE_FIELDS: { key: keyof ViatorBookingDetails; labels: string[] 
   { key: 'travelers', labels: ['Travelers'] },
   { key: 'tourGrade', labels: ['Tour Grade Description', 'Tour Grade'] },
   { key: 'language', labels: ['Tour Language'] },
-  { key: 'pickupLocation', labels: ['Hotel Pickup', 'Pickup Location', 'Meeting Point'] },
+  { key: 'cruiseShipName', labels: ['Cruise Ship Name', 'Cruise Ship'] },
+  { key: 'pickupLocation', labels: ['Hotel Pickup', 'Pickup Location', 'Meeting Point', 'Port Pickup'] },
   { key: 'arrivalFlightNo', labels: ['Arrival Flight No', 'Arrival Flight Number'] },
   { key: 'arrivalTime', labels: ['Arrival Time'] },
   { key: 'arrivalAirline', labels: ['Arrival Airline'] },
@@ -50,7 +52,18 @@ const VIATOR_INLINE_FIELDS: { key: keyof ViatorBookingDetails; labels: string[] 
   },
   { key: 'departureTime', labels: ['Departure Time'] },
   { key: 'departureAirline', labels: ['Departure Airline'] },
-  { key: 'dropoffLocation', labels: ['Drop Off Location', 'Drop-off Location', 'Dropoff Location'] },
+  {
+    key: 'dropoffLocation',
+    labels: [
+      'Drop Off Location',
+      'Drop-off Location',
+      'Dropoff Location',
+      'Drop Off Point',
+      'Destination',
+      'Port Drop Off',
+      'Port Drop-off',
+    ],
+  },
   { key: 'specialRequirements', labels: ['Special Requirements', 'Special Requests'] },
 ];
 
@@ -342,6 +355,10 @@ function extractFromText(text: string): ViatorBookingDetails {
 
   normalizeFlightAndTimeFields(fields);
   applyEmbeddedLegFromPickup(fields);
+  const cruiseShipRaw = fields.cruiseShipName?.trim();
+  fields.cruiseShipName = cruiseShipRaw
+    ? sanitizeValue(cruiseShipRaw)
+    : undefined;
   fields.pickupLocation = cleanPickupLocationLabel(fields.pickupLocation);
   fields.dropoffLocation = cleanPickupLocationLabel(fields.dropoffLocation);
 

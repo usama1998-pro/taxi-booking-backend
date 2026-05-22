@@ -24,6 +24,7 @@ export function hasStructuredBookingFields(fields: ViatorBookingFields): boolean
       fields.travelerNames ||
       fields.phone ||
       fields.pickupLocation ||
+      fields.cruiseShipName ||
       fields.dropoffLocation ||
       fields.travelers ||
       fields.arrivalFlightNo ||
