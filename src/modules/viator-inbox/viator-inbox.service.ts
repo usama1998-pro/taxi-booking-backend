@@ -55,6 +55,7 @@ export type ViatorInboxCheckResult = {
   scanned: number;
   skippedDuplicate: number;
   skippedProduct: number;
+  skippedSubject: number;
   lookbackHours: number;
   notifications: ViatorNotificationDto[];
 };
@@ -411,7 +412,7 @@ export class ViatorInboxService {
     });
 
     this.logger.log(
-      `Viator inbox check done (scanned=${result.scanned}, added=${result.added}, skippedDuplicate=${result.skippedDuplicate}, skippedProduct=${result.skippedProduct}, notifications=${result.notifications.length}, unread=${await this.getUnreadCount()}, elapsedMs=${Date.now() - startedAt})`,
+      `Viator inbox check done (scanned=${result.scanned}, added=${result.added}, skippedDuplicate=${result.skippedDuplicate}, skippedProduct=${result.skippedProduct}, skippedSubject=${result.skippedSubject}, notifications=${result.notifications.length}, unread=${await this.getUnreadCount()}, elapsedMs=${Date.now() - startedAt})`,
     );
     return result;
   }
@@ -427,7 +428,8 @@ export class ViatorInboxService {
 
   private isWithinLookback(envelopeDate: Date | undefined): boolean {
     if (!envelopeDate) {
-      return false;
+      // IMAP SEARCH already applied `since`; keep messages with missing envelope dates.
+      return true;
     }
     return envelopeDate.getTime() >= this.recentInboxCutoff().getTime();
   }
@@ -437,6 +439,7 @@ export class ViatorInboxService {
     scanned: number;
     skippedDuplicate: number;
     skippedProduct: number;
+    skippedSubject: number;
     lookbackHours: number;
     notifications: ViatorNotificationDto[];
   }> {
@@ -444,6 +447,7 @@ export class ViatorInboxService {
     let scanned = 0;
     let skippedDuplicate = 0;
     let skippedProduct = 0;
+    let skippedSubject = 0;
     const notifications: ViatorNotificationDto[] = [];
     const processedRefs = new Set<string>();
 
@@ -460,6 +464,7 @@ export class ViatorInboxService {
         scanned: 0,
         skippedDuplicate: 0,
         skippedProduct: 0,
+        skippedSubject: 0,
         lookbackHours: VIATOR_INBOX_LOOKBACK_HOURS,
         notifications,
       };
@@ -491,6 +496,10 @@ export class ViatorInboxService {
       const { uid, subject, receivedAt } = row;
       const parsed = this.parseEmailForImport(subject);
       if (!parsed) {
+        skippedSubject += 1;
+        this.logger.debug(
+          `Skip Viator email (unrecognized subject): uid=${uid} subject=${subject.slice(0, 120)}`,
+        );
         continue;
       }
 
@@ -552,6 +561,7 @@ export class ViatorInboxService {
       scanned,
       skippedDuplicate,
       skippedProduct,
+      skippedSubject,
       lookbackHours: VIATOR_INBOX_LOOKBACK_HOURS,
       notifications,
     };
@@ -606,6 +616,17 @@ export class ViatorInboxService {
     }
 
     const details = await parseViatorEmailBody(source);
+
+    if (!input.isTestBooking) {
+      const fromBody = await parseViatorBookingReferenceFromBody(source);
+      if (fromBody) {
+        viatorReference = fromBody;
+        parsed.viatorReference = fromBody;
+        if (await this.isDuplicateViatorReference(viatorReference)) {
+          return 'duplicate';
+        }
+      }
+    }
 
     if (!isAllowedViatorProductCode(details.productCode)) {
       this.logger.log(

@@ -1,16 +1,22 @@
 /** Subject line Viator sends into your Hostinger inbox (not a separate mail system). */
 const VIATOR_NEW_BOOKING_SUBJECT =
-  /^New Booking for (.+?) \(#(BR-\d+)\)\s*$/i;
+  /^(?:Re:\s*|Fwd:\s*|Fw:\s*)*New Booking for (.+?) \(#(BR-\d+)\)\s*$/i;
 
 export type ParsedViatorNewBooking = {
   pickupDateLabel: string;
   viatorReference: string;
 };
 
+export function normalizeViatorEmailSubject(subject: string): string {
+  return subject.replace(/\s+/g, ' ').trim();
+}
+
 export function parseViatorNewBookingSubject(
   subject: string,
 ): ParsedViatorNewBooking | null {
-  const match = subject.trim().match(VIATOR_NEW_BOOKING_SUBJECT);
+  const match = normalizeViatorEmailSubject(subject).match(
+    VIATOR_NEW_BOOKING_SUBJECT,
+  );
   if (!match) {
     return null;
   }

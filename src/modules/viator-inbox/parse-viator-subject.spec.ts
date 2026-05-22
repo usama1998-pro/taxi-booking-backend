@@ -22,6 +22,17 @@ describe('parseViatorNewBookingSubject', () => {
   it('returns null for unrelated subjects', () => {
     expect(parseViatorNewBookingSubject('Your receipt')).toBeNull();
   });
+
+  it('parses subjects with Re: prefix', () => {
+    expect(
+      parseViatorNewBookingSubject(
+        'Re: New Booking for Fri, May 22, 2026 (#BR-1400460161)',
+      ),
+    ).toEqual({
+      pickupDateLabel: 'Fri, May 22, 2026',
+      viatorReference: 'BR-1400460161',
+    });
+  });
 });
 
 describe('parseViatorTestBookingSubject', () => {
