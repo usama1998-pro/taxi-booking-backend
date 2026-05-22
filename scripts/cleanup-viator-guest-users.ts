@@ -11,7 +11,9 @@
  * 1) Resolves a target staff user (SUPER_ADMIN_EMAIL if valid, else first admin user).
  * 2) Reassigns bookings owned by legacy Viator guest users to that staff user.
  * 3) Deletes those legacy guest users.
- */
+added this for test 
+
+*/
 import '../src/bootstrap-env';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
@@ -22,7 +24,9 @@ type TargetStaffUser = { id: string; email: string };
 const APPLY_FLAG = '--apply';
 const VIATOR_GUEST_EMAIL_PATTERN = 'viator.%@taxibarcelona24.guest';
 
-async function resolveTargetStaffUser(prisma: PrismaClient): Promise<TargetStaffUser> {
+async function resolveTargetStaffUser(
+  prisma: PrismaClient,
+): Promise<TargetStaffUser> {
   const configuredEmail = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
   if (configuredEmail) {
     const configured = await prisma.user.findUnique({
@@ -84,7 +88,9 @@ async function main(): Promise<void> {
     console.log(
       `cleanup-viator-guests: users matched = ${legacyGuestUsers.length} (pattern: ${VIATOR_GUEST_EMAIL_PATTERN})`,
     );
-    console.log(`cleanup-viator-guests: bookings to reassign = ${impactedBookings}`);
+    console.log(
+      `cleanup-viator-guests: bookings to reassign = ${impactedBookings}`,
+    );
 
     if (!apply) {
       console.log(
