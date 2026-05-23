@@ -1,4 +1,26 @@
-import { reservedBookingReferenceWhere } from './booking-reference.where';
+import {
+  normalizeBookingReference,
+  reservedBookingReferenceWhere,
+  trashedBookingReference,
+} from './booking-reference.where';
+
+describe('normalizeBookingReference', () => {
+  it('trims and uppercases', () => {
+    expect(normalizeBookingReference('  br-123  ')).toBe('BR-123');
+  });
+});
+
+describe('trashedBookingReference', () => {
+  it('appends #trash-{uuid} once', () => {
+    const uuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    expect(trashedBookingReference('BR-123', uuid)).toBe(
+      `BR-123#trash-${uuid}`,
+    );
+    expect(
+      trashedBookingReference(`BR-123#trash-${uuid}`, uuid),
+    ).toBe(`BR-123#trash-${uuid}`);
+  });
+});
 
 describe('reservedBookingReferenceWhere', () => {
   it('matches exact reference on active or trash rows', () => {
@@ -8,5 +30,18 @@ describe('reservedBookingReferenceWhere', () => {
         { bookingReference: { startsWith: 'BR-123#trash-' } },
       ],
     });
+  });
+
+  it('matches a trashed suffix row when looking up the live reference', () => {
+    const uuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const trashed = trashedBookingReference('BR-1399266959', uuid);
+    const where = reservedBookingReferenceWhere('BR-1399266959');
+    expect(where.OR).toEqual(
+      expect.arrayContaining([
+        { bookingReference: 'BR-1399266959' },
+        { bookingReference: { startsWith: 'BR-1399266959#trash-' } },
+      ]),
+    );
+    expect(trashed.startsWith('BR-1399266959#trash-')).toBe(true);
   });
 });

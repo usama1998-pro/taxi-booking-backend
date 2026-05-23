@@ -25,7 +25,12 @@ import {
 import { UpdateBookingDto } from './dto/update-booking.dto';
 import { MailService } from '../mail/mail.service';
 import { activeBookingWhere } from './booking-active.where';
-import { reservedBookingReferenceWhere } from './booking-reference.where';
+import {
+  displayBookingReference,
+  normalizeBookingReference,
+  reservedBookingReferenceWhere,
+  trashedBookingReference,
+} from './booking-reference.where';
 import { trashedBookingWhere } from './booking-trash.where';
 import {
   BOOKING_TRASH_PURGE_BATCH_SIZE,
@@ -104,12 +109,31 @@ export class BookingsService {
   private readonly logger = new Logger(BookingsService.name);
 
   private viatorReferencesForBooking(bookingReference: string): string[] {
-    const refs = new Set<string>([bookingReference]);
-    const trashIdx = bookingReference.indexOf('#trash-');
+    const refs = new Set<string>([
+      bookingReference,
+      normalizeBookingReference(bookingReference),
+    ]);
+    const trashIdx = bookingReference.toLowerCase().indexOf('#trash-');
     if (trashIdx > 0) {
-      refs.add(bookingReference.slice(0, trashIdx));
+      refs.add(normalizeBookingReference(bookingReference.slice(0, trashIdx)));
     }
     return [...refs];
+  }
+
+  /** Active or trashed row for a reference (used by Viator idempotency). */
+  async findReservedBookingByReference(
+    bookingReference: string,
+  ): Promise<{ uuid: string; deletedAt: Date | null } | null> {
+    const ref = normalizeBookingReference(bookingReference);
+    if (!ref) {
+      return null;
+    }
+    const row = await this.prisma.booking.findFirst({
+      where: reservedBookingReferenceWhere(ref),
+      select: { uuid: true, deletedAt: true },
+      orderBy: [{ deletedAt: 'asc' }],
+    });
+    return row ?? null;
   }
 
   /** Active booking or trashed row with the same reference (blocks re-use until purge). */
@@ -117,7 +141,7 @@ export class BookingsService {
     bookingReference: string,
     excludeUuid?: string,
   ): Promise<boolean> {
-    const ref = bookingReference.trim();
+    const ref = normalizeBookingReference(bookingReference);
     if (!ref) {
       return false;
     }
@@ -135,7 +159,7 @@ export class BookingsService {
     tx: Prisma.TransactionClient,
     bookingReference: string,
   ): Promise<boolean> {
-    const ref = bookingReference.trim();
+    const ref = normalizeBookingReference(bookingReference);
     if (!ref) {
       return false;
     }
@@ -191,10 +215,11 @@ export class BookingsService {
   ): Promise<string> {
     const trimmed = requested?.trim();
     if (trimmed) {
-      if (await this.isBookingReferenceReservedInTx(tx, trimmed)) {
+      const normalized = normalizeBookingReference(trimmed);
+      if (await this.isBookingReferenceReservedInTx(tx, normalized)) {
         throw new BadRequestException('That booking reference is already in use');
       }
-      return trimmed;
+      return normalized;
     }
     for (let i = 0; i < 24; i++) {
       const candidate = `BK-${randomBytes(4).toString('hex').toUpperCase()}`;
@@ -252,7 +277,10 @@ export class BookingsService {
     const { id: _id, deletedAt: _deletedAt, ...rest } = row;
     void _id;
     void _deletedAt;
-    return rest;
+    return {
+      ...rest,
+      bookingReference: displayBookingReference(rest.bookingReference),
+    };
   }
 
   private toPublicTrashBooking(row: BookingWithRelations): BookingTrashPublic {
@@ -332,14 +360,14 @@ export class BookingsService {
   async findByBookingReference(
     bookingReference: string,
   ): Promise<BookingPublic | null> {
-    const ref = bookingReference.trim();
+    const ref = normalizeBookingReference(bookingReference);
     if (!ref) {
       return null;
     }
     const booking = await this.prisma.booking.findFirst({
       where: reservedBookingReferenceWhere(ref),
       include: bookingInclude,
-      orderBy: [{ deletedAt: { sort: 'asc', nulls: 'first' } }],
+      orderBy: [{ deletedAt: 'asc' }],
     });
     return booking ? this.toPublicBooking(booking) : null;
   }
@@ -351,7 +379,9 @@ export class BookingsService {
   async createFromViator(
     dto: CreateBookingDto,
   ): Promise<{ booking: BookingPublic; created: boolean }> {
-    const ref = dto.bookingReference?.trim();
+    const ref = dto.bookingReference
+      ? normalizeBookingReference(dto.bookingReference)
+      : '';
     if (ref) {
       const existing = await this.findByBookingReference(ref);
       if (existing) {
@@ -885,19 +915,25 @@ export class BookingsService {
 
     const driverId = booking.driverId;
     const originalReference = booking.bookingReference;
+    const trashedReference = trashedBookingReference(originalReference, uuid);
+    const viatorRefs = this.viatorReferencesForBooking(originalReference);
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.viatorAlert.deleteMany({
+      await tx.viatorAlert.updateMany({
         where: {
           OR: [
             { bookingUuid: uuid },
-            { viatorReference: originalReference },
+            { viatorReference: { in: viatorRefs } },
           ],
         },
+        data: { dismissedAt: new Date() },
       });
       await tx.booking.update({
         where: { uuid },
-        data: { deletedAt: new Date() },
+        data: {
+          deletedAt: new Date(),
+          bookingReference: trashedReference,
+        },
       });
       if (driverId) {
         const remaining = await tx.booking.count({

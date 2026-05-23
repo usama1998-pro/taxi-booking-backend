@@ -29,6 +29,7 @@ import {
 } from './viator-test-email';
 import { isAllowedViatorProductCode } from './viator-allowed-products';
 import { withImapSession } from './viator-imap-session';
+import { normalizeBookingReference } from '../bookings/booking-reference.where';
 import { mapViatorToCreateBookingDto } from './viator-to-booking.mapper';
 
 export type ViatorNotificationDto = {
@@ -56,6 +57,7 @@ export type ViatorInboxCheckResult = {
   skippedDuplicate: number;
   skippedProduct: number;
   skippedSubject: number;
+  failedImport: number;
   lookbackHours: number;
   notifications: ViatorNotificationDto[];
 };
@@ -160,7 +162,11 @@ export class ViatorInboxService {
     return { ...parsed, isTestBooking: false };
   }
 
-  private bumpTestScheduledTimeIfPast(scheduledTimeIso: string): string {
+  /**
+   * Viator emails often default missing times to 09:00 Madrid; same-day imports
+   * would otherwise fail "pickup must be in the future" after 9am.
+   */
+  private bumpViatorScheduledTimeIfPast(scheduledTimeIso: string): string {
     let scheduled = parseScheduledTime(scheduledTimeIso);
     const now = new Date();
     let guard = 0;
@@ -177,28 +183,35 @@ export class ViatorInboxService {
     details: ViatorBookingDetails;
     isTestBooking?: boolean;
   }): Promise<ViatorPersistResult> {
-    const { viatorReference } = input;
+    const viatorReference = normalizeBookingReference(input.viatorReference);
     try {
-      const existing = await this.bookingsService.findByBookingReference(
-        viatorReference,
-      );
-      if (existing) {
+      const reserved =
+        await this.bookingsService.findReservedBookingByReference(
+          viatorReference,
+        );
+      if (reserved) {
+        if (reserved.deletedAt) {
+          this.logger.log(
+            `Skip Viator booking (reference in trash): ${viatorReference}`,
+          );
+        }
+        const existing = await this.bookingsService.findByBookingReference(
+          viatorReference,
+        );
         return {
           viatorReference,
-          bookingUuid: existing.uuid,
+          bookingUuid: existing?.uuid ?? reserved.uuid,
           savedToDb: false,
           alreadyInDatabase: true,
         };
       }
 
       let dto = mapViatorToCreateBookingDto(input);
-      if (input.isTestBooking) {
-        dto = {
-          ...dto,
-          scheduledTime: this.bumpTestScheduledTimeIfPast(dto.scheduledTime),
-        };
-        assertPickupNotInPast(parseScheduledTime(dto.scheduledTime));
-      }
+      dto = {
+        ...dto,
+        scheduledTime: this.bumpViatorScheduledTimeIfPast(dto.scheduledTime),
+      };
+      assertPickupNotInPast(parseScheduledTime(dto.scheduledTime));
       const { booking, created } =
         await this.bookingsService.createFromViator(dto);
       if (created) {
@@ -314,17 +327,29 @@ export class ViatorInboxService {
   private async isDuplicateViatorReference(
     viatorReference: string,
   ): Promise<boolean> {
+    const ref = normalizeBookingReference(viatorReference);
+    if (!ref) {
+      return false;
+    }
     const existingAlert = await this.prisma.viatorAlert.findUnique({
-      where: { viatorReference },
+      where: { viatorReference: ref },
       select: { id: true },
     });
     if (existingAlert) {
       return true;
     }
-    const existingBooking = await this.bookingsService.findByBookingReference(
-      viatorReference,
-    );
-    return Boolean(existingBooking);
+    return this.bookingsService.isBookingReferenceReserved(ref);
+  }
+
+  private async logDuplicateViatorSkip(viatorReference: string): Promise<void> {
+    const ref = normalizeBookingReference(viatorReference);
+    const reserved =
+      await this.bookingsService.findReservedBookingByReference(ref);
+    if (reserved?.deletedAt) {
+      this.logger.log(`Skip Viator booking (reference in trash): ${ref}`);
+      return;
+    }
+    this.logger.log(`Skip Viator booking (already imported): ${ref}`);
   }
 
   /** Same #BR-TEST email (IMAP uid) is only imported once; each new message gets a new BR-…. */
@@ -398,8 +423,9 @@ export class ViatorInboxService {
     }
 
     const startedAt = Date.now();
+    const cutoff = this.recentInboxCutoff();
     this.logger.log(
-      `Viator inbox check started (lookback=${VIATOR_INBOX_LOOKBACK_HOURS}h, tz=${getBookingTimeZone()})`,
+      `Viator inbox check started (lookback=${VIATOR_INBOX_LOOKBACK_HOURS}h, since=${cutoff.toISOString()}, tz=${getBookingTimeZone()}, now=${new Date().toISOString()})`,
     );
 
     const result = await withImapSession(cfg, async (client) => {
@@ -412,7 +438,7 @@ export class ViatorInboxService {
     });
 
     this.logger.log(
-      `Viator inbox check done (scanned=${result.scanned}, added=${result.added}, skippedDuplicate=${result.skippedDuplicate}, skippedProduct=${result.skippedProduct}, skippedSubject=${result.skippedSubject}, notifications=${result.notifications.length}, unread=${await this.getUnreadCount()}, elapsedMs=${Date.now() - startedAt})`,
+      `Viator inbox check done (scanned=${result.scanned}, added=${result.added}, skippedDuplicate=${result.skippedDuplicate}, skippedProduct=${result.skippedProduct}, skippedSubject=${result.skippedSubject}, failedImport=${result.failedImport}, notifications=${result.notifications.length}, unread=${await this.getUnreadCount()}, elapsedMs=${Date.now() - startedAt})`,
     );
     return result;
   }
@@ -440,6 +466,7 @@ export class ViatorInboxService {
     skippedDuplicate: number;
     skippedProduct: number;
     skippedSubject: number;
+    failedImport: number;
     lookbackHours: number;
     notifications: ViatorNotificationDto[];
   }> {
@@ -448,6 +475,7 @@ export class ViatorInboxService {
     let skippedDuplicate = 0;
     let skippedProduct = 0;
     let skippedSubject = 0;
+    let failedImport = 0;
     const notifications: ViatorNotificationDto[] = [];
     const processedRefs = new Set<string>();
 
@@ -465,6 +493,7 @@ export class ViatorInboxService {
         skippedDuplicate: 0,
         skippedProduct: 0,
         skippedSubject: 0,
+        failedImport: 0,
         lookbackHours: VIATOR_INBOX_LOOKBACK_HOURS,
         notifications,
       };
@@ -524,9 +553,7 @@ export class ViatorInboxService {
         }
       } else if (await this.isDuplicateViatorReference(parsed.viatorReference)) {
         skippedDuplicate += 1;
-        this.logger.log(
-          `Skip Viator booking (already imported): ${parsed.viatorReference}`,
-        );
+        await this.logDuplicateViatorSkip(parsed.viatorReference);
         continue;
       }
 
@@ -545,6 +572,8 @@ export class ViatorInboxService {
         );
       } else if (outcome === 'ignored_product') {
         skippedProduct += 1;
+      } else if (outcome === null) {
+        failedImport += 1;
       } else if (outcome?.dto) {
         notifications.push(outcome.dto);
         added += 1;
@@ -562,6 +591,7 @@ export class ViatorInboxService {
       skippedDuplicate,
       skippedProduct,
       skippedSubject,
+      failedImport,
       lookbackHours: VIATOR_INBOX_LOOKBACK_HOURS,
       notifications,
     };
