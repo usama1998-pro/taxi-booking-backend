@@ -1,11 +1,17 @@
 import './bootstrap-env';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { createApplicationLogger } from './core/logger/nest-winston.logger';
 import { getSwaggerPath, setupSwagger } from './core/swagger/setup-swagger';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const logger = createApplicationLogger();
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+    logger,
+  });
+  app.useLogger(logger);
   app.enableShutdownHooks();
   // Reflects the request `Origin` — any website can call this API from the browser.
   // (Using `origin: '*'` would break `credentials: true`.)
@@ -38,10 +44,10 @@ async function bootstrap() {
   const base =
     process.env.APP_URL?.replace(/\/$/, '') ?? `http://localhost:${port}`;
   const docsPath = getSwaggerPath();
-  Logger.log(`Process timezone: ${process.env.TZ}`, 'Bootstrap');
-  Logger.log(`Listening on http://${host}:${port}`, 'Bootstrap');
-  Logger.log(`Backend (e.g. browser): ${base}`, 'Bootstrap');
-  Logger.log(`Swagger: ${base}/${docsPath}`, 'Bootstrap');
-  Logger.log('CORS: all origins allowed (reflect request Origin)', 'Bootstrap');
+  logger.log(`Process timezone: ${process.env.TZ}`, 'Bootstrap');
+  logger.log(`Listening on http://${host}:${port}`, 'Bootstrap');
+  logger.log(`Backend (e.g. browser): ${base}`, 'Bootstrap');
+  logger.log(`Swagger: ${base}/${docsPath}`, 'Bootstrap');
+  logger.log('CORS: all origins allowed (reflect request Origin)', 'Bootstrap');
 }
 void bootstrap();
