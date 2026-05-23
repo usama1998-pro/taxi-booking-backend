@@ -2,6 +2,7 @@ import {
   normalizeBookingReference,
   reservedBookingReferenceWhere,
   trashedBookingReference,
+  trashedBookingReferenceRange,
 } from './booking-reference.where';
 
 describe('normalizeBookingReference', () => {
@@ -22,12 +23,26 @@ describe('trashedBookingReference', () => {
   });
 });
 
+describe('trashedBookingReferenceRange', () => {
+  it('bounds all #trash-{uuid} suffix rows without LIKE', () => {
+    expect(trashedBookingReferenceRange('BR-123')).toEqual({
+      gte: 'BR-123#trash-',
+      lt: 'BR-123#trash.',
+    });
+  });
+});
+
 describe('reservedBookingReferenceWhere', () => {
   it('matches exact reference on active or trash rows', () => {
     expect(reservedBookingReferenceWhere('BR-123')).toEqual({
       OR: [
         { bookingReference: 'BR-123' },
-        { bookingReference: { startsWith: 'BR-123#trash-' } },
+        {
+          bookingReference: {
+            gte: 'BR-123#trash-',
+            lt: 'BR-123#trash.',
+          },
+        },
       ],
     });
   });
@@ -39,7 +54,12 @@ describe('reservedBookingReferenceWhere', () => {
     expect(where.OR).toEqual(
       expect.arrayContaining([
         { bookingReference: 'BR-1399266959' },
-        { bookingReference: { startsWith: 'BR-1399266959#trash-' } },
+        {
+          bookingReference: {
+            gte: 'BR-1399266959#trash-',
+            lt: 'BR-1399266959#trash.',
+          },
+        },
       ]),
     );
     expect(trashed.startsWith('BR-1399266959#trash-')).toBe(true);

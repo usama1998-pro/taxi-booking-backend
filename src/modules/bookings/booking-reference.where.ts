@@ -37,8 +37,23 @@ export function trashedBookingReference(
 }
 
 /**
+ * Inclusive range for `BR-…#trash-{uuid}` rows (avoids MySQL `LIKE` collation errors).
+ * `lt` is the smallest string strictly greater than any `…#trash-{uuid}` value.
+ */
+export function trashedBookingReferenceRange(liveReference: string): {
+  gte: string;
+  lt: string;
+} {
+  const ref = normalizeBookingReference(liveReference);
+  return {
+    gte: `${ref}${TRASH_SUFFIX}`,
+    lt: `${ref}#trash.`,
+  };
+}
+
+/**
  * Match a booking reference on active rows or trashed rows (same `Booking` table).
- * Legacy soft-deletes may have `BR-…#trash-{uuid}` — included via prefix match.
+ * Legacy soft-deletes may have `BR-…#trash-{uuid}` — matched via string range, not `LIKE`.
  */
 export function reservedBookingReferenceWhere(
   bookingReference: string,
@@ -47,10 +62,16 @@ export function reservedBookingReferenceWhere(
   if (!ref) {
     return { id: '__none__' };
   }
+  const trashRange = trashedBookingReferenceRange(ref);
   return {
     OR: [
       { bookingReference: ref },
-      { bookingReference: { startsWith: `${ref}#trash-` } },
+      {
+        bookingReference: {
+          gte: trashRange.gte,
+          lt: trashRange.lt,
+        },
+      },
     ],
   };
 }
