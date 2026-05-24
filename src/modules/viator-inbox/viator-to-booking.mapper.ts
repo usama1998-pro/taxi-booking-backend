@@ -2,7 +2,9 @@ import { normalizePhoneNumber } from '../../common/utils/phone.util';
 import type { CreateBookingDto } from '../bookings/dto/create-booking.dto';
 import type { ViatorBookingDetails } from './parse-viator-email-body';
 import {
+  isCityToAirportProductCode,
   isCityToCruiseProductCode,
+  isCruisePortToAirportProductCode,
   isCruiseToCityProductCode,
 } from './viator-allowed-products';
 import {
@@ -65,8 +67,23 @@ function toPickupLocationJson(
 function toDropoffLocationJson(
   label: string | undefined,
   fallback: string,
+  options?: { forceAirport?: boolean; airline?: string; flightNo?: string },
 ): Record<string, unknown> {
   const text = (label?.trim() || fallback).slice(0, 500);
+  const isAirport = options?.forceAirport || AIRPORT_PATTERN.test(text);
+  if (isAirport) {
+    const loc: Record<string, unknown> = {
+      kind: 'airport',
+      label: text.includes('Airport') ? text : 'Barcelona-El Prat Airport',
+    };
+    if (options?.airline) {
+      loc.airline = options.airline;
+    }
+    if (options?.flightNo) {
+      loc.flight = options.flightNo;
+    }
+    return loc;
+  }
   return { kind: 'location', label: text };
 }
 
@@ -168,17 +185,35 @@ export function mapViatorToCreateBookingDto(input: {
 
   const airportPickup = isAirportPickup(details);
   const cruiseToCity = isCruiseToCityProductCode(details.productCode);
+  const cruiseToAirport = isCruisePortToAirportProductCode(details.productCode);
+  const cityToAirport = isCityToAirportProductCode(details.productCode);
+  const cityToCruise = isCityToCruiseProductCode(details.productCode);
+  const dropoffAtAirport = cruiseToAirport || cityToAirport;
   const flight = buildFlightInfo(details);
   const pickupLabel = resolveViatorPickupLocationLabel(details);
   const dropoffLabel = resolveViatorDropoffLocationLabel(details);
 
-  const scheduledTime = parseViatorScheduledTimeIso(pickupDateLabel, {
+  const { iso: scheduledTime, hasTime } = parseViatorScheduledTimeIso(pickupDateLabel, {
     arrivalTime: details.arrivalTime,
     departureTime: details.departureTime,
+    tourGradeCode: details.tourGradeCode,
     isAirportPickup: airportPickup || cruiseToCity,
+    preferTourGradeCodeTime: dropoffAtAirport || cityToCruise,
   });
 
   const passengerCount = parseViatorPassengerCount(details.travelers);
+
+  const noteParts: string[] = [];
+  if (!hasTime) {
+    noteParts.push('No pickup time selected by customer');
+  }
+  const specialReqs = buildNote(details);
+  if (specialReqs) {
+    noteParts.push(specialReqs);
+  }
+  const note = noteParts.length > 0
+    ? truncateDbString(noteParts.join(' | '))
+    : undefined;
 
   return {
     bookingReference: viatorReference,
@@ -191,13 +226,21 @@ export function mapViatorToCreateBookingDto(input: {
       airline: flight.airline,
       flightNo: flight.flightNo,
     }),
-    dropoffLocation: toDropoffLocationJson(dropoffLabel, 'Drop-off TBC'),
+    dropoffLocation: toDropoffLocationJson(dropoffLabel, 'Drop-off TBC', {
+      forceAirport: dropoffAtAirport,
+      airline: dropoffAtAirport
+        ? (details.departureAirline?.trim() || details.arrivalAirline?.trim())
+        : undefined,
+      flightNo: dropoffAtAirport
+        ? (details.departureFlightNo?.trim() || details.arrivalFlightNo?.trim())
+        : undefined,
+    }),
     scheduledTime,
     price: 0,
     status: 'PENDING',
     luggageCount: 0,
     passengerCount,
     flightNumber: truncateDbString(buildFlightNumber(details)),
-    note: buildNote(details),
+    note,
   };
 }

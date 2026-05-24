@@ -22,6 +22,7 @@ export type ViatorBookingDetails = {
   departureTime?: string;
   departureAirline?: string;
   tourGrade?: string;
+  tourGradeCode?: string;
   productCode?: string;
 };
 
@@ -40,6 +41,7 @@ const VIATOR_INLINE_FIELDS: { key: keyof ViatorBookingDetails; labels: string[] 
   { key: 'travelerNames', labels: ['Traveler Names'] },
   { key: 'travelers', labels: ['Travelers'] },
   { key: 'tourGrade', labels: ['Tour Grade Description', 'Tour Grade'] },
+  { key: 'tourGradeCode', labels: ['Tour Grade Code'] },
   { key: 'language', labels: ['Tour Language'] },
   { key: 'cruiseShipName', labels: ['Cruise Ship Name', 'Cruise Ship'] },
   { key: 'pickupLocation', labels: ['Hotel Pickup', 'Pickup Location', 'Meeting Point', 'Port Pickup'] },
@@ -73,7 +75,6 @@ const BOUNDARY_LABELS = [
   'Travel Date',
   'Date',
   'Product Code',
-  'Tour Grade Code',
   'Location',
   'Net Rate',
   'Phone',

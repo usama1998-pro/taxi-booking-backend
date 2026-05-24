@@ -27,21 +27,39 @@ function parseTimeParts(
 export type ViatorPickupTimeInput = {
   arrivalTime?: string;
   departureTime?: string;
+  tourGradeCode?: string;
   /** True when picking up at the airport (inbound flight). */
   isAirportPickup?: boolean;
+  /** City → airport/cruise (and cruise → airport): pickup time from Tour Grade Code (e.g. TG1~12:30). */
+  preferTourGradeCodeTime?: boolean;
 };
+
+/** Extract time from tour grade code, e.g. "TG1~12:30" → "12:30". */
+function extractTimeFromTourGradeCode(tourGradeCode?: string): string | undefined {
+  if (!tourGradeCode) {
+    return undefined;
+  }
+  const match = tourGradeCode.match(/~(\d{1,2}:\d{2})\b/);
+  return match?.[1];
+}
 
 /**
  * Pickup `scheduledTime`: airport inbound uses arrival time; hotel→airport uses departure time.
+ * City → airport/cruise and cruise → airport use Tour Grade Code time only (e.g. "TG1~12:30").
  */
 export function resolveViatorPickupTimeLabel(input: ViatorPickupTimeInput): string | undefined {
   const arrival = input.arrivalTime?.trim();
   const departure = input.departureTime?.trim();
+  const tourGradeTime = extractTimeFromTourGradeCode(input.tourGradeCode);
+
+  if (input.preferTourGradeCodeTime) {
+    return tourGradeTime;
+  }
 
   if (input.isAirportPickup) {
-    return arrival || departure;
+    return arrival || departure || tourGradeTime;
   }
-  return departure || arrival;
+  return departure || arrival || tourGradeTime;
 }
 
 /**
@@ -50,7 +68,7 @@ export function resolveViatorPickupTimeLabel(input: ViatorPickupTimeInput): stri
 export function parseViatorScheduledTimeIso(
   pickupDateLabel: string,
   timeInput?: string | ViatorPickupTimeInput,
-): string {
+): { iso: string; hasTime: boolean } {
   const timeZone = getBookingTimeZone();
   const { year, month, day } = calendarPartsFromPickupDateLabel(
     pickupDateLabel,
@@ -64,17 +82,22 @@ export function parseViatorScheduledTimeIso(
     pickupTime = resolveViatorPickupTimeLabel(timeInput);
   }
 
-  let hour = 9;
+  let hour = 0;
   let minute = 0;
+  let hasTime = false;
   if (pickupTime) {
     const parsed = parseTimeParts(pickupTime);
     if (parsed) {
       hour = parsed.hour;
       minute = parsed.minute;
+      hasTime = true;
     }
   }
 
-  return wallClockToUtc(year, month, day, hour, minute, timeZone).toISOString();
+  return {
+    iso: wallClockToUtc(year, month, day, hour, minute, timeZone).toISOString(),
+    hasTime,
+  };
 }
 
 export function viatorGuestEmail(viatorReference: string): string {
