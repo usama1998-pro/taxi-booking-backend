@@ -16,9 +16,9 @@ describe('viator-to-booking.mapper (cruise ship to city)', () => {
     arrivalTime: '8:30 am',
   };
 
-  it('combines cruise ship and port in pickup label', () => {
+  it('uses cruise ship name only in pickup label', () => {
     expect(resolveViatorPickupLocationLabel(baseDetails)).toBe(
-      'MSC Meraviglia — Port of Barcelona, Moll Adossat',
+      'MSC Meraviglia',
     );
   });
 
@@ -31,7 +31,16 @@ describe('viator-to-booking.mapper (cruise ship to city)', () => {
     ).toBe('MSC Meraviglia');
   });
 
-  it('maps drop-off and cruise pickup into booking DTO', () => {
+  it('falls back to port when cruise ship name is missing', () => {
+    expect(
+      resolveViatorPickupLocationLabel({
+        ...baseDetails,
+        cruiseShipName: undefined,
+      }),
+    ).toBe('Port of Barcelona, Moll Adossat');
+  });
+
+  it('maps cruise ship pickup and city drop-off into booking DTO', () => {
     const dto = mapViatorToCreateBookingDto({
       viatorReference: 'BR-123456789',
       pickupDateLabel: 'Thu, Jun 12, 2026',
@@ -39,7 +48,7 @@ describe('viator-to-booking.mapper (cruise ship to city)', () => {
     });
     expect(dto.pickupLocation).toEqual({
       kind: 'location',
-      label: 'MSC Meraviglia — Port of Barcelona, Moll Adossat',
+      label: 'MSC Meraviglia',
     });
     expect(dto.dropoffLocation).toEqual({
       kind: 'location',
@@ -65,13 +74,22 @@ describe('viator-to-booking.mapper (city to cruise)', () => {
     );
   });
 
-  it('combines cruise ship and port in drop-off label', () => {
+  it('uses cruise ship name only in drop-off label', () => {
     expect(resolveViatorDropoffLocationLabel(baseDetails)).toBe(
-      'Costa Smeralda — Port of Barcelona, Moll Adossat',
+      'Costa Smeralda',
     );
   });
 
-  it('maps city pickup and cruise drop-off into booking DTO', () => {
+  it('falls back to port when cruise ship name is missing', () => {
+    expect(
+      resolveViatorDropoffLocationLabel({
+        ...baseDetails,
+        cruiseShipName: undefined,
+      }),
+    ).toBe('Port of Barcelona, Moll Adossat');
+  });
+
+  it('maps city pickup and cruise ship drop-off into booking DTO', () => {
     const dto = mapViatorToCreateBookingDto({
       viatorReference: 'BR-987654321',
       pickupDateLabel: 'Fri, Jun 13, 2026',
@@ -83,7 +101,7 @@ describe('viator-to-booking.mapper (city to cruise)', () => {
     });
     expect(dto.dropoffLocation).toEqual({
       kind: 'location',
-      label: 'Costa Smeralda — Port of Barcelona, Moll Adossat',
+      label: 'Costa Smeralda',
     });
   });
 });

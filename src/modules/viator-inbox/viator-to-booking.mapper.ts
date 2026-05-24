@@ -113,42 +113,24 @@ function isAirportPickup(details: ViatorBookingDetails): boolean {
   return AIRPORT_PATTERN.test(details.pickupLocation ?? '');
 }
 
-function combineCruiseShipAndPortLabel(
-  ship: string | undefined,
-  port: string | undefined,
-): string | undefined {
-  const shipTrim = ship?.trim();
-  const portTrim = port?.trim();
-  if (shipTrim && portTrim && !portTrim.toLowerCase().includes(shipTrim.toLowerCase())) {
-    return `${shipTrim} — ${portTrim}`;
-  }
-  return shipTrim || portTrim;
-}
-
-/** Cruise ship → city: ship name (and optional port) in pickup; city drop-off from email. */
+/** Cruise ship → city: cruise ship name in pickup; city drop-off from email. */
 export function resolveViatorPickupLocationLabel(
   details: ViatorBookingDetails,
 ): string | undefined {
   if (!isCruiseToCityProductCode(details.productCode)) {
     return details.pickupLocation;
   }
-  return combineCruiseShipAndPortLabel(
-    details.cruiseShipName,
-    details.pickupLocation,
-  );
+  return details.cruiseShipName?.trim() || details.pickupLocation;
 }
 
-/** City → cruise: city/hotel pickup from email; ship name (and optional port) in drop-off. */
+/** City → cruise: city/hotel pickup from email; cruise ship name in drop-off. */
 export function resolveViatorDropoffLocationLabel(
   details: ViatorBookingDetails,
 ): string | undefined {
   if (!isCityToCruiseProductCode(details.productCode)) {
     return details.dropoffLocation;
   }
-  return combineCruiseShipAndPortLabel(
-    details.cruiseShipName,
-    details.dropoffLocation,
-  );
+  return details.cruiseShipName?.trim() || details.dropoffLocation;
 }
 
 function buildFlightInfo(details: ViatorBookingDetails): {
