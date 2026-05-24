@@ -76,6 +76,8 @@ const BOUNDARY_LABELS = [
   'Tour Grade Code',
   'Location',
   'Net Rate',
+  'Phone',
+  'Alternate Phone',
 ];
 
 const ALL_INLINE_LABELS = [
