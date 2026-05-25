@@ -129,3 +129,43 @@ describe('viator-to-booking.mapper (city to cruise)', () => {
     });
   });
 });
+
+describe('viator-to-booking.mapper (cruise port to airport)', () => {
+  const baseDetails: ViatorBookingDetails = {
+    productCode: '406570P8',
+    cruiseShipName: 'Norwegian Escape',
+    pickupLocation: 'Port of Barcelona, Moll Adossat',
+    dropoffLocation: 'Barcelona-El Prat Airport',
+    departureFlightNo: 'VY1234',
+    departureAirline: 'Vueling',
+    tourGradeCode: 'TG1~14:00',
+  };
+
+  it('uses cruise ship name only in pickup label', () => {
+    expect(resolveViatorPickupLocationLabel(baseDetails)).toBe('Norwegian Escape');
+  });
+
+  it('keeps airport drop-off unchanged', () => {
+    expect(resolveViatorDropoffLocationLabel(baseDetails)).toBe(
+      'Barcelona-El Prat Airport',
+    );
+  });
+
+  it('maps cruise ship pickup and airport drop-off into booking DTO', () => {
+    const dto = mapViatorToCreateBookingDto({
+      viatorReference: 'BR-555666777',
+      pickupDateLabel: 'Mon, Jul 6, 2026',
+      details: baseDetails,
+    });
+    expect(dto.pickupLocation).toEqual({
+      kind: 'location',
+      label: 'Norwegian Escape',
+    });
+    expect(dto.dropoffLocation).toMatchObject({
+      kind: 'airport',
+      label: 'Barcelona-El Prat Airport',
+      flight: 'VY1234',
+      airline: 'Vueling',
+    });
+  });
+});
