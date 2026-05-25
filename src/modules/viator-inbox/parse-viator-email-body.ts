@@ -18,6 +18,8 @@ export type ViatorBookingDetails = {
   arrivalFlightNo?: string;
   arrivalTime?: string;
   arrivalAirline?: string;
+  /** Ship disembarkation — not used for pickup scheduling. */
+  disembarkationTime?: string;
   departureFlightNo?: string;
   departureTime?: string;
   departureAirline?: string;
@@ -48,6 +50,10 @@ const VIATOR_INLINE_FIELDS: { key: keyof ViatorBookingDetails; labels: string[] 
   { key: 'arrivalFlightNo', labels: ['Arrival Flight No', 'Arrival Flight Number'] },
   { key: 'arrivalTime', labels: ['Arrival Time'] },
   { key: 'arrivalAirline', labels: ['Arrival Airline'] },
+  {
+    key: 'disembarkationTime',
+    labels: ['Disembarkation Time', 'Disembarkment Time'],
+  },
   {
     key: 'departureFlightNo',
     labels: ['Departure Flight No', 'Departure Flight Number'],
@@ -241,9 +247,10 @@ function extractEmbeddedLegFromText(text: string, leg: 'arrival' | 'departure'):
       'i',
     ),
   )?.[1];
+  // Avoid matching "disembarkation time" / "disembarkment time" as arrival/departure time.
   const time = text.match(
     new RegExp(
-      `\\b${prefix}\\s+time\\s*:\\s*(\\d{1,2}:\\d{2}\\s*(?:am|pm)?)\\b`,
+      `(?<!disembark(?:ation|ment)\\s+)\\b${prefix}\\s+time\\s*:\\s*(\\d{1,2}:\\d{2}\\s*(?:am|pm)?)\\b`,
       'i',
     ),
   )?.[1];
@@ -295,6 +302,7 @@ function normalizeFlightAndTimeFields(
   fields.departureFlightNo = sanitizeFlightNumber(fields.departureFlightNo);
   fields.arrivalTime = sanitizeTimeLabel(fields.arrivalTime);
   fields.departureTime = sanitizeTimeLabel(fields.departureTime);
+  fields.disembarkationTime = sanitizeTimeLabel(fields.disembarkationTime);
 
   if (fields.arrivalFlightNo && fields.arrivalTime) {
     const contaminated = fields.arrivalFlightNo.match(
@@ -317,6 +325,10 @@ function cleanPickupLocationLabel(raw?: string): string | undefined {
   v = v.replace(/\s+special\s+requirements\s*:.*/i, '').trim();
   v = v.replace(/\s+arrival\s+(?:flight|airline|time)\s*(?:no\.?|number)?\s*:.*/i, '').trim();
   v = v.replace(/\s+departure\s+(?:flight|airline|time)\s*(?:no\.?|number)?\s*:.*/i, '').trim();
+  v = v.replace(
+    /\s+disembark(?:ation|ment)\s+time\s*:.*/i,
+    '',
+  ).trim();
   v = v.replace(/\s+drop[\s-]*off\s+location\s*:.*/i, '').trim();
   v = v.replace(/\(?alternate\s+phone\)?.*$/i, '').trim();
   v = v.replace(/\bphone\s*:.*/i, '').trim();

@@ -30,7 +30,7 @@ export type ViatorPickupTimeInput = {
   tourGradeCode?: string;
   /** True when picking up at the airport (inbound flight). */
   isAirportPickup?: boolean;
-  /** City → airport/cruise (and cruise → airport): pickup time from Tour Grade Code (e.g. TG1~12:30). */
+  /** Cruise / city→airport routes: pickup from Tour Grade Code only — not disembarkation or flight times. */
   preferTourGradeCodeTime?: boolean;
 };
 
@@ -45,7 +45,7 @@ function extractTimeFromTourGradeCode(tourGradeCode?: string): string | undefine
 
 /**
  * Pickup `scheduledTime`: airport inbound uses arrival time; hotel→airport uses departure time.
- * City → airport/cruise and cruise → airport use Tour Grade Code time only (e.g. "TG1~12:30").
+ * Cruise and city→airport routes use Tour Grade Code only (not disembarkation/arrival/departure times).
  */
 export function resolveViatorPickupTimeLabel(input: ViatorPickupTimeInput): string | undefined {
   const arrival = input.arrivalTime?.trim();

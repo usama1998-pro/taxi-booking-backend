@@ -197,8 +197,8 @@ export function mapViatorToCreateBookingDto(input: {
     arrivalTime: details.arrivalTime,
     departureTime: details.departureTime,
     tourGradeCode: details.tourGradeCode,
-    isAirportPickup: airportPickup || cruiseToCity,
-    preferTourGradeCodeTime: dropoffAtAirport || cityToCruise,
+    isAirportPickup: airportPickup,
+    preferTourGradeCodeTime: dropoffAtAirport || cityToCruise || cruiseToCity,
   });
 
   const passengerCount = parseViatorPassengerCount(details.travelers);

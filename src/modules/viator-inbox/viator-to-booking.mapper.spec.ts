@@ -55,6 +55,30 @@ describe('viator-to-booking.mapper (cruise ship to city)', () => {
       label: 'Hotel Arts Barcelona',
     });
   });
+
+  it('uses tour grade code for pickup time, not arrival/disembarkation time', () => {
+    const dto = mapViatorToCreateBookingDto({
+      viatorReference: 'BR-123456789',
+      pickupDateLabel: 'Thu, Jun 12, 2026',
+      details: {
+        ...baseDetails,
+        tourGradeCode: 'TG1~11:00',
+      },
+    });
+    expect(dto.note).toBeUndefined();
+    const scheduled = new Date(dto.scheduledTime);
+    expect(scheduled.getUTCHours()).toBe(9);
+    expect(scheduled.getUTCMinutes()).toBe(0);
+  });
+
+  it('leaves pickup time unset when only disembarkation/arrival time is present', () => {
+    const dto = mapViatorToCreateBookingDto({
+      viatorReference: 'BR-123456789',
+      pickupDateLabel: 'Thu, Jun 12, 2026',
+      details: baseDetails,
+    });
+    expect(dto.note).toContain('No pickup time selected by customer');
+  });
 });
 
 describe('viator-to-booking.mapper (city to cruise)', () => {
