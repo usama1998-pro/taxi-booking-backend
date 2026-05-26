@@ -16,7 +16,6 @@ export type ViatorBookingDetails = {
   language?: string;
   specialRequirements?: string;
   arrivalFlightNo?: string;
-  arrivalTime?: string;
   arrivalAirline?: string;
   /** Ship disembarkation — not used for pickup scheduling. */
   disembarkationTime?: string;
@@ -48,7 +47,6 @@ const VIATOR_INLINE_FIELDS: { key: keyof ViatorBookingDetails; labels: string[] 
   { key: 'cruiseShipName', labels: ['Cruise Ship Name', 'Cruise Ship'] },
   { key: 'pickupLocation', labels: ['Hotel Pickup', 'Pickup Location', 'Meeting Point', 'Port Pickup'] },
   { key: 'arrivalFlightNo', labels: ['Arrival Flight No', 'Arrival Flight Number'] },
-  { key: 'arrivalTime', labels: ['Arrival Time'] },
   { key: 'arrivalAirline', labels: ['Arrival Airline'] },
   {
     key: 'disembarkationTime',
@@ -248,12 +246,14 @@ function extractEmbeddedLegFromText(text: string, leg: 'arrival' | 'departure'):
     ),
   )?.[1];
   // Avoid matching "disembarkation time" / "disembarkment time" as arrival/departure time.
-  const time = text.match(
-    new RegExp(
-      `(?<!disembark(?:ation|ment)\\s+)\\b${prefix}\\s+time\\s*:\\s*(\\d{1,2}:\\d{2}\\s*(?:am|pm)?)\\b`,
-      'i',
-    ),
-  )?.[1];
+  const time = leg === 'departure'
+    ? text.match(
+      new RegExp(
+        `(?<!disembark(?:ation|ment)\\s+)\\b${prefix}\\s+time\\s*:\\s*(\\d{1,2}:\\d{2}\\s*(?:am|pm)?)\\b`,
+        'i',
+      ),
+    )?.[1]
+    : undefined;
   if (airline) {
     out.airline = sanitizeValue(airline);
   }
@@ -280,9 +280,6 @@ function applyEmbeddedLegFromPickup(fields: Partial<ViatorBookingDetails>): void
   if (!fields.arrivalFlightNo && arrival.flightNo) {
     fields.arrivalFlightNo = arrival.flightNo;
   }
-  if (!fields.arrivalTime && arrival.time) {
-    fields.arrivalTime = arrival.time;
-  }
 
   if (!fields.departureAirline && departure.airline) {
     fields.departureAirline = departure.airline;
@@ -300,21 +297,8 @@ function normalizeFlightAndTimeFields(
 ): void {
   fields.arrivalFlightNo = sanitizeFlightNumber(fields.arrivalFlightNo);
   fields.departureFlightNo = sanitizeFlightNumber(fields.departureFlightNo);
-  fields.arrivalTime = sanitizeTimeLabel(fields.arrivalTime);
   fields.departureTime = sanitizeTimeLabel(fields.departureTime);
   fields.disembarkationTime = sanitizeTimeLabel(fields.disembarkationTime);
-
-  if (fields.arrivalFlightNo && fields.arrivalTime) {
-    const contaminated = fields.arrivalFlightNo.match(
-      /(\d{1,2}:\d{2}\s*(?:am|pm)?)/i,
-    );
-    if (contaminated) {
-      if (!fields.arrivalTime) {
-        fields.arrivalTime = sanitizeTimeLabel(contaminated[1]);
-      }
-      fields.arrivalFlightNo = undefined;
-    }
-  }
 }
 
 function cleanPickupLocationLabel(raw?: string): string | undefined {
@@ -323,7 +307,7 @@ function cleanPickupLocationLabel(raw?: string): string | undefined {
   }
   let v = raw;
   v = v.replace(/\s+special\s+requirements\s*:.*/i, '').trim();
-  v = v.replace(/\s+arrival\s+(?:flight|airline|time)\s*(?:no\.?|number)?\s*:.*/i, '').trim();
+  v = v.replace(/\s+arrival\s+(?:flight|airline)\s*(?:no\.?|number)?\s*:.*/i, '').trim();
   v = v.replace(/\s+departure\s+(?:flight|airline|time)\s*(?:no\.?|number)?\s*:.*/i, '').trim();
   v = v.replace(
     /\s+disembark(?:ation|ment)\s+time\s*:.*/i,

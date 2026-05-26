@@ -11,7 +11,6 @@ describe('parseViatorEmailBody (cruise ship)', () => {
     'Travelers: 2',
     'Cruise Ship: MSC Meraviglia',
     'Port Pickup: Port of Barcelona, Moll Adossat',
-    'Arrival Time: 8:30 am',
     'Drop Off Location: Hotel Arts Barcelona',
     'Phone: +34600111222',
   ].join(' ');
@@ -22,10 +21,9 @@ describe('parseViatorEmailBody (cruise ship)', () => {
     expect(details.cruiseShipName).toBe('MSC Meraviglia');
     expect(details.pickupLocation).toBe('Port of Barcelona, Moll Adossat');
     expect(details.dropoffLocation).toBe('Hotel Arts Barcelona');
-    expect(details.arrivalTime).toBe('8:30 am');
   });
 
-  it('parses disembarkation time without treating it as arrival time', async () => {
+  it('parses disembarkation time without treating it as pickup time', async () => {
     const body = [
       'Booking Details',
       'Booking Reference: BR-111222333',
@@ -38,7 +36,6 @@ describe('parseViatorEmailBody (cruise ship)', () => {
 
     const details = await parseViatorEmailBody(body);
     expect(details.disembarkationTime).toBe('9:15 am');
-    expect(details.arrivalTime).toBeUndefined();
     expect(details.pickupLocation).toBe('Port of Barcelona, Moll Adossat');
   });
 });

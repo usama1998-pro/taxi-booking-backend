@@ -28,6 +28,6 @@ export function hasStructuredBookingFields(fields: ViatorBookingFields): boolean
       fields.dropoffLocation ||
       fields.travelers ||
       fields.arrivalFlightNo ||
-      fields.arrivalTime,
+      fields.departureTime,
   );
 }

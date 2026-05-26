@@ -185,6 +185,18 @@ function buildFlightNumber(details: ViatorBookingDetails): string | undefined {
   return parts.length > 0 ? parts.join(' ') : undefined;
 }
 
+function buildAirportDropoffReturnTimeIso(
+  pickupDateLabel: string,
+  details: ViatorBookingDetails,
+): string | undefined {
+  const departure = details.departureTime?.trim();
+  if (!departure) {
+    return undefined;
+  }
+  const parsed = parseViatorScheduledTimeIso(pickupDateLabel, departure);
+  return parsed.hasTime ? parsed.iso : undefined;
+}
+
 export function mapViatorToCreateBookingDto(input: {
   viatorReference: string;
   pickupDateLabel: string;
@@ -205,9 +217,11 @@ export function mapViatorToCreateBookingDto(input: {
   const flight = buildFlightInfo(details);
   const pickupLabel = resolveViatorPickupLocationLabel(details);
   const dropoffLabel = resolveViatorDropoffLocationLabel(details);
+  const dropoffAirportReturnTime = dropoffAtAirport
+    ? buildAirportDropoffReturnTimeIso(pickupDateLabel, details)
+    : undefined;
 
   const { iso: scheduledTime, hasTime } = parseViatorScheduledTimeIso(pickupDateLabel, {
-    arrivalTime: details.arrivalTime,
     departureTime: details.departureTime,
     tourGradeCode: details.tourGradeCode,
     isAirportPickup: airportPickup,
@@ -242,12 +256,13 @@ export function mapViatorToCreateBookingDto(input: {
     dropoffLocation: toDropoffLocationJson(dropoffLabel, 'Drop-off TBC', {
       forceAirport: dropoffAtAirport,
       airline: dropoffAtAirport
-        ? (details.departureAirline?.trim() || details.arrivalAirline?.trim())
+        ? details.departureAirline?.trim()
         : undefined,
       flightNo: dropoffAtAirport
-        ? (details.departureFlightNo?.trim() || details.arrivalFlightNo?.trim())
+        ? details.departureFlightNo?.trim()
         : undefined,
     }),
+    returnTime: dropoffAirportReturnTime,
     scheduledTime,
     price: 0,
     status: 'PENDING',

@@ -13,7 +13,6 @@ describe('viator-to-booking.mapper (cruise ship to city)', () => {
     dropoffLocation: 'Hotel Arts Barcelona',
     leadTraveler: 'Jane Cruise',
     travelers: '2',
-    arrivalTime: '8:30 am',
   };
 
   it('uses cruise ship name only in pickup label', () => {
@@ -71,7 +70,7 @@ describe('viator-to-booking.mapper (cruise ship to city)', () => {
     expect(scheduled.getUTCMinutes()).toBe(0);
   });
 
-  it('leaves pickup time unset when only disembarkation/arrival time is present', () => {
+  it('leaves pickup time unset when only disembarkation time is present', () => {
     const dto = mapViatorToCreateBookingDto({
       viatorReference: 'BR-123456789',
       pickupDateLabel: 'Thu, Jun 12, 2026',
@@ -167,5 +166,34 @@ describe('viator-to-booking.mapper (cruise port to airport)', () => {
       flight: 'VY1234',
       airline: 'Vueling',
     });
+    expect(dto.returnTime).toBeUndefined();
+  });
+});
+
+describe('viator-to-booking.mapper (city to airport)', () => {
+  const baseDetails: ViatorBookingDetails = {
+    productCode: '419333P1',
+    pickupLocation: 'Hotel Arts Barcelona',
+    dropoffLocation: 'Barcelona-El Prat Airport',
+    departureFlightNo: 'IB3201',
+    departureAirline: 'Iberia',
+    departureTime: '8:45 pm',
+    arrivalFlightNo: 'SHOULD-NOT-USE',
+    arrivalAirline: 'IGNORE',
+  };
+
+  it('uses departure fields for airport drop-off and ignores arrival fallback', () => {
+    const dto = mapViatorToCreateBookingDto({
+      viatorReference: 'BR-999000111',
+      pickupDateLabel: 'Mon, Jul 6, 2026',
+      details: baseDetails,
+    });
+    expect(dto.dropoffLocation).toMatchObject({
+      kind: 'airport',
+      label: 'Barcelona-El Prat Airport',
+      flight: 'IB3201',
+      airline: 'Iberia',
+    });
+    expect(dto.returnTime).toBeDefined();
   });
 });

@@ -80,7 +80,6 @@ export function buildViatorTestEmailBodies(options: {
     'Tour Language: English',
     'Hotel Pickup: Barcelona El Prat Airport (TEST)',
     'Arrival Flight No: XX9999',
-    'Arrival Time: 10:30',
     'Arrival Airline: Test Air',
     'Drop Off Location: Hotel Arts Barcelona (TEST)',
     'Phone: +34600111222',
@@ -100,7 +99,6 @@ export function buildViatorTestEmailBodies(options: {
 <p><b>Tour Language:</b> English</p>
 <p><b>Hotel Pickup:</b> Barcelona El Prat Airport (TEST)</p>
 <p><b>Arrival Flight No:</b> XX9999</p>
-<p><b>Arrival Time:</b> 10:30</p>
 <p><b>Arrival Airline:</b> Test Air</p>
 <p><b>Drop Off Location:</b> Hotel Arts Barcelona (TEST)</p>
 <p><b>Phone:</b> +34600111222</p>
