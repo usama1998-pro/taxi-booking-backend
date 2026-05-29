@@ -540,7 +540,6 @@ export class ViatorInboxService {
           );
           continue;
         }
-        processedRefs.add(parsed.viatorReference);
       }
 
       if (parsed.isTestBooking) {
@@ -575,6 +574,9 @@ export class ViatorInboxService {
       } else if (outcome === null) {
         failedImport += 1;
       } else if (outcome?.dto) {
+        if (!parsed.isTestBooking) {
+          processedRefs.add(parsed.viatorReference);
+        }
         notifications.push(outcome.dto);
         added += 1;
         this.logger.log(

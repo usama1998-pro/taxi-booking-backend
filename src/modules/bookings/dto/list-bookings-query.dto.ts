@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
 
 /** When set, filters the list for driver/passenger trip timelines. Omit `timeScope` for an unfiltered list (`createdAt` desc). */
 export enum BookingTimeScope {
@@ -44,4 +44,13 @@ export class ListBookingsQueryDto {
   @IsOptional()
   @IsEnum(BookingTimeScope)
   timeScope?: BookingTimeScope;
+
+  @ApiPropertyOptional({
+    description:
+      'Filter by pickup calendar day in server `TZ` (e.g. Europe/Madrid). `YYYY-MM-DD`. Combined with `timeScope` when set.',
+    example: '2026-09-17',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  scheduledOn?: string;
 }

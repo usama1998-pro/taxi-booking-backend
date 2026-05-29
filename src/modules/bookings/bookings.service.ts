@@ -14,8 +14,10 @@ import type { AuthenticatedUser } from '../auth/auth.types';
 import { getBookingListScheduledDayBounds } from './booking-list-scheduled-bounds';
 import {
   assertPickupNotInPast,
+  getBookingTimeZone,
   parseScheduledTime,
 } from './booking-scheduled-time';
+import { scheduledCalendarDayBounds } from './booking-zoned-time';
 import { calculateBookingPrice } from './booking-pricing';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import {
@@ -586,6 +588,19 @@ export class BookingsService {
         ],
       };
       orderBy = { scheduledTime: 'asc' };
+    }
+
+    if (query.scheduledOn) {
+      const { start, end } = scheduledCalendarDayBounds(
+        query.scheduledOn,
+        getBookingTimeZone(),
+      );
+      where = {
+        AND: [
+          where,
+          { scheduledTime: { gte: start, lt: end } },
+        ],
+      };
     }
 
     const page = query.page ?? 1;
