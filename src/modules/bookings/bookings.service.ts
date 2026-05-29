@@ -556,51 +556,67 @@ export class BookingsService {
 
     const notTerminal: Prisma.BookingWhereInput = { NOT: terminalOr };
 
+    const scheduledDayFilter = query.scheduledOn
+      ? (() => {
+          const { start, end } = scheduledCalendarDayBounds(
+            query.scheduledOn,
+            getBookingTimeZone(),
+          );
+          return { scheduledTime: { gte: start, lt: end } } satisfies Prisma.BookingWhereInput;
+        })()
+      : null;
+
     let where: Prisma.BookingWhereInput = baseWhere;
     let orderBy: Prisma.BookingOrderByWithRelationInput | Prisma.BookingOrderByWithRelationInput[] =
       { createdAt: 'desc' };
 
     if (query.timeScope === BookingTimeScope.Past) {
-      where = { AND: [baseWhere, terminalOr] };
+      where = {
+        AND: [
+          baseWhere,
+          terminalOr,
+          ...(scheduledDayFilter ? [scheduledDayFilter] : []),
+        ],
+      };
       orderBy = [
         { completedAt: { sort: 'desc', nulls: 'last' } },
         { createdAt: 'desc' },
       ];
     } else if (query.timeScope === BookingTimeScope.Current) {
-      /** Open bookings due today or earlier (includes overdue until completed/cancelled). */
-      const { startOfTomorrow } = getBookingListScheduledDayBounds();
-      where = {
-        AND: [
-          baseWhere,
-          notTerminal,
-          { scheduledTime: { lt: startOfTomorrow } },
-        ],
-      };
+      if (scheduledDayFilter) {
+        /** Date search: all open trips on that calendar day (not only "today"). */
+        where = { AND: [baseWhere, notTerminal, scheduledDayFilter] };
+      } else {
+        /** Open bookings due today or earlier (includes overdue until completed/cancelled). */
+        const { startOfTomorrow } = getBookingListScheduledDayBounds();
+        where = {
+          AND: [
+            baseWhere,
+            notTerminal,
+            { scheduledTime: { lt: startOfTomorrow } },
+          ],
+        };
+      }
       orderBy = { scheduledTime: 'asc' };
     } else if (query.timeScope === BookingTimeScope.Upcoming) {
-      /** Open bookings from tomorrow onward (local TZ). */
-      const { startOfTomorrow } = getBookingListScheduledDayBounds();
-      where = {
-        AND: [
-          baseWhere,
-          notTerminal,
-          { scheduledTime: { gte: startOfTomorrow } },
-        ],
-      };
+      if (scheduledDayFilter) {
+        /** Date search: trips on that day even when it is today or earlier than "tomorrow". */
+        where = { AND: [baseWhere, notTerminal, scheduledDayFilter] };
+      } else {
+        /** Open bookings from tomorrow onward (local TZ). */
+        const { startOfTomorrow } = getBookingListScheduledDayBounds();
+        where = {
+          AND: [
+            baseWhere,
+            notTerminal,
+            { scheduledTime: { gte: startOfTomorrow } },
+          ],
+        };
+      }
       orderBy = { scheduledTime: 'asc' };
-    }
-
-    if (query.scheduledOn) {
-      const { start, end } = scheduledCalendarDayBounds(
-        query.scheduledOn,
-        getBookingTimeZone(),
-      );
-      where = {
-        AND: [
-          where,
-          { scheduledTime: { gte: start, lt: end } },
-        ],
-      };
+    } else if (scheduledDayFilter) {
+      where = { AND: [baseWhere, scheduledDayFilter] };
+      orderBy = { scheduledTime: 'asc' };
     }
 
     const page = query.page ?? 1;

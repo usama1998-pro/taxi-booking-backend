@@ -39,7 +39,7 @@ export class ListBookingsQueryDto {
   @ApiPropertyOptional({
     enum: BookingTimeScope,
     description:
-      '`past`: completed or cancelled, ordered by `completedAt` then `createdAt` (newest first). `current`: not terminal and pickup before tomorrow (today + overdue), soonest `scheduledTime` first. `upcoming`: not terminal and `scheduledTime` from tomorrow onward, soonest `scheduledTime` first.',
+      '`past`: completed or cancelled, ordered by `completedAt` then `createdAt` (newest first). `current`: not terminal and pickup before tomorrow (today + overdue), soonest `scheduledTime` first. `upcoming`: not terminal and `scheduledTime` from tomorrow onward, soonest `scheduledTime` first. With `scheduledOn`, returns all open/completed trips on that calendar day in server `TZ` (not limited to tomorrow+).',
   })
   @IsOptional()
   @IsEnum(BookingTimeScope)
