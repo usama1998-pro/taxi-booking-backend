@@ -193,6 +193,7 @@ describe('viator-to-booking.mapper (city to airport)', () => {
       label: 'Barcelona-El Prat Airport',
       flight: 'IB3201',
       airline: 'Iberia',
+      departureTime: '8:45 pm',
     });
     expect(dto.returnTime).toBeDefined();
   });

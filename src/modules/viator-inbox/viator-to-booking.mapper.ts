@@ -67,7 +67,13 @@ function toPickupLocationJson(
 function toDropoffLocationJson(
   label: string | undefined,
   fallback: string,
-  options?: { forceAirport?: boolean; airline?: string; flightNo?: string },
+  options?: {
+    forceAirport?: boolean;
+    airline?: string;
+    flightNo?: string;
+    /** Raw Viator departure time — kept when `returnTime` ISO cannot be built. */
+    departureTime?: string;
+  },
 ): Record<string, unknown> {
   const text = (label?.trim() || fallback).slice(0, 500);
   const isAirport = options?.forceAirport || AIRPORT_PATTERN.test(text);
@@ -81,6 +87,9 @@ function toDropoffLocationJson(
     }
     if (options?.flightNo) {
       loc.flight = options.flightNo;
+    }
+    if (options?.departureTime) {
+      loc.departureTime = options.departureTime;
     }
     return loc;
   }
@@ -260,6 +269,9 @@ export function mapViatorToCreateBookingDto(input: {
         : undefined,
       flightNo: dropoffAtAirport
         ? details.departureFlightNo?.trim()
+        : undefined,
+      departureTime: dropoffAtAirport
+        ? details.departureTime?.trim()
         : undefined,
     }),
     returnTime: dropoffAirportReturnTime,
