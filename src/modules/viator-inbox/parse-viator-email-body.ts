@@ -79,10 +79,16 @@ const VIATOR_INLINE_FIELDS: { key: keyof ViatorBookingDetails; labels: string[] 
       'Drop Off Location',
       'Drop-off Location',
       'Dropoff Location',
+      'Drop Off Location Name',
+      'Drop-off Location Name',
+      'Dropoff Location Name',
       'Drop Off Point',
+      'Drop-off Point',
+      'Dropoff Point',
       'Destination',
       'Port Drop Off',
       'Port Drop-off',
+      'Port Dropoff',
     ],
   },
   { key: 'specialRequirements', labels: ['Special Requirements', 'Special Requests'] },
@@ -331,7 +337,10 @@ function cleanPickupLocationLabel(raw?: string): string | undefined {
     /\s+disembark(?:ation|ment)\s+time\s*:.*/i,
     '',
   ).trim();
-  v = v.replace(/\s+drop[\s-]*off\s+location\s*:.*/i, '').trim();
+  v = v.replace(
+    /\s+(?:drop[\s-]*off(?:\s+(?:location(?:\s+name)?|point))?|destination|port\s+drop[\s-]*off)\s*:.*/i,
+    '',
+  ).trim();
   v = v.replace(/\(?alternate\s+phone\)?.*$/i, '').trim();
   v = v.replace(/\bphone\s*:.*/i, '').trim();
   v = v.replace(/\bUS\+?\d[\d\s().-]{7,}\b/gi, '').trim();

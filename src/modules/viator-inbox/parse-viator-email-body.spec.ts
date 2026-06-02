@@ -72,4 +72,20 @@ describe('parseViatorEmailBody (pickup name only)', () => {
     const details = await parseViatorEmailBody(body);
     expect(details.pickupLocation).toBe('Holiday Inn Express Barcelona - City 22@');
   });
+
+  it('does not bleed dropoff location name into pickup location', async () => {
+    const body = [
+      'Booking Details',
+      'Booking Reference: BR-888999000',
+      'Travel Date: Thu, Jun 12, 2026',
+      'Hotel Pickup: Hostal Bedmates',
+      'Drop Off Location Name: Barcelona-El Prat Airport',
+      'Arrival Flight No: UA992',
+    ].join(' ');
+
+    const details = await parseViatorEmailBody(body);
+    expect(details.pickupLocation).toBe('Hostal Bedmates');
+    expect(details.dropoffLocation).toBe('Barcelona-El Prat Airport');
+    expect(details.arrivalFlightNo).toBe('UA992');
+  });
 });
