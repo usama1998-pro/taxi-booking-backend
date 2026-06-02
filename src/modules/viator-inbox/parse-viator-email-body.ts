@@ -46,7 +46,16 @@ const VIATOR_INLINE_FIELDS: { key: keyof ViatorBookingDetails; labels: string[] 
   { key: 'language', labels: ['Tour Language'] },
   { key: 'cruiseShipName', labels: ['Cruise Ship Name', 'Cruise Ship'] },
   { key: 'pickupLocation', labels: ['Hotel Pickup', 'Pickup Location', 'Meeting Point', 'Port Pickup'] },
-  { key: 'arrivalFlightNo', labels: ['Arrival Flight No', 'Arrival Flight Number'] },
+  {
+    key: 'arrivalFlightNo',
+    labels: [
+      'Arrival Flight No',
+      'Arrival Flight No.',
+      'Arrival Flight Number',
+      'Arrival Flight #',
+      'Arrival Flight',
+    ],
+  },
   { key: 'arrivalAirline', labels: ['Arrival Airline'] },
   {
     key: 'disembarkationTime',
@@ -54,7 +63,13 @@ const VIATOR_INLINE_FIELDS: { key: keyof ViatorBookingDetails; labels: string[] 
   },
   {
     key: 'departureFlightNo',
-    labels: ['Departure Flight No', 'Departure Flight Number'],
+    labels: [
+      'Departure Flight No',
+      'Departure Flight No.',
+      'Departure Flight Number',
+      'Departure Flight #',
+      'Departure Flight',
+    ],
   },
   { key: 'departureTime', labels: ['Departure Time'] },
   { key: 'departureAirline', labels: ['Departure Airline'] },
@@ -81,6 +96,7 @@ const BOUNDARY_LABELS = [
   'Product Code',
   'Location',
   'Net Rate',
+  'Boarding Time',
   'Phone',
   'Alternate Phone',
 ];
@@ -151,10 +167,11 @@ function sanitizeFlightNumber(raw?: string): string | undefined {
   if (/\d{1,2}:\d{2}\s*(?:am|pm)?/i.test(v) || /\btime\b/i.test(v)) {
     return undefined;
   }
-  if (!/^[A-Za-z0-9-]{1,12}$/.test(v)) {
+  const compact = v.replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9-]{1,12}$/.test(compact)) {
     return undefined;
   }
-  return sanitizeValue(v);
+  return sanitizeValue(compact);
 }
 
 function sanitizeTimeLabel(raw?: string): string | undefined {
@@ -307,6 +324,7 @@ function cleanPickupLocationLabel(raw?: string): string | undefined {
   }
   let v = raw;
   v = v.replace(/\s+special\s+requirements\s*:.*/i, '').trim();
+  v = v.replace(/\s+boarding\s+time\s*:.*/i, '').trim();
   v = v.replace(/\s+arrival\s+(?:flight|airline)\s*(?:no\.?|number)?\s*:.*/i, '').trim();
   v = v.replace(/\s+departure\s+(?:flight|airline|time)\s*(?:no\.?|number)?\s*:.*/i, '').trim();
   v = v.replace(
@@ -318,7 +336,28 @@ function cleanPickupLocationLabel(raw?: string): string | undefined {
   v = v.replace(/\bphone\s*:.*/i, '').trim();
   v = v.replace(/\bUS\+?\d[\d\s().-]{7,}\b/gi, '').trim();
   v = v.replace(/\s{2,}/g, ' ').trim();
-  return sanitizeValue(v);
+  const cleaned = sanitizeValue(v);
+  if (!cleaned) {
+    return undefined;
+  }
+
+  // Driver UI wants place name only, not full street/city suffix from Viator.
+  const parts = cleaned
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) {
+    return undefined;
+  }
+  const first = parts[0];
+  const second = parts[1];
+  if (second && first.toLowerCase() === second.toLowerCase()) {
+    return sanitizeValue(first);
+  }
+  if (parts.length > 2) {
+    return sanitizeValue(first);
+  }
+  return sanitizeValue(cleaned);
 }
 
 function cleanSpecialRequirements(raw?: string): string | undefined {

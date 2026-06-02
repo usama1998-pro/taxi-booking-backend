@@ -571,15 +571,27 @@ export class BookingsService {
       { createdAt: 'desc' };
 
     if (query.timeScope === BookingTimeScope.Past) {
+      const { startOfToday } = getBookingListScheduledDayBounds();
       where = {
         AND: [
           baseWhere,
-          terminalOr,
+          {
+            OR: [
+              terminalOr,
+              {
+                AND: [
+                  notTerminal,
+                  { scheduledTime: { lt: startOfToday } },
+                ],
+              },
+            ],
+          },
           ...(scheduledDayFilter ? [scheduledDayFilter] : []),
         ],
       };
       orderBy = [
         { completedAt: { sort: 'desc', nulls: 'last' } },
+        { scheduledTime: 'desc' },
         { createdAt: 'desc' },
       ];
     } else if (query.timeScope === BookingTimeScope.Current) {
@@ -587,13 +599,15 @@ export class BookingsService {
         /** Date search: all open trips on that calendar day (not only "today"). */
         where = { AND: [baseWhere, notTerminal, scheduledDayFilter] };
       } else {
-        /** Open bookings due today or earlier (includes overdue until completed/cancelled). */
-        const { startOfTomorrow } = getBookingListScheduledDayBounds();
+        /** Open bookings due today (local TZ). */
+        const { startOfToday, startOfTomorrow } = getBookingListScheduledDayBounds();
         where = {
           AND: [
             baseWhere,
             notTerminal,
-            { scheduledTime: { lt: startOfTomorrow } },
+            {
+              scheduledTime: { gte: startOfToday, lt: startOfTomorrow },
+            },
           ],
         };
       }
