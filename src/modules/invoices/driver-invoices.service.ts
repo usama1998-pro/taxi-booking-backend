@@ -61,6 +61,7 @@ function mapInvoice(row: {
   taxAmount: Prisma.Decimal;
   totalAmount: Prisma.Decimal;
   sourceBookingUuid: string | null;
+  passengerCount: number;
   childSeatsSummary: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -85,6 +86,7 @@ function mapInvoice(row: {
     taxAmount: toMoneyResponse(row.taxAmount),
     totalAmount: toMoneyResponse(row.totalAmount),
     sourceBookingUuid: row.sourceBookingUuid,
+    passengerCount: row.passengerCount,
     childSeatsSummary: row.childSeatsSummary,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -176,6 +178,7 @@ export class DriverInvoicesService {
         taxAmount,
         totalAmount,
         sourceBookingUuid,
+        passengerCount: dto.passengerCount,
         childSeatsSummary,
       },
     });

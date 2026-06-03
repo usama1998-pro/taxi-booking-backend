@@ -20,6 +20,7 @@ export type DriverInvoicePdfModel = {
   taxAmount: number;
   totalAmount: number;
   sourceBookingUuid: string | null;
+  passengerCount: number;
   childSeatsSummary: string | null;
   createdAt: string;
 };
@@ -163,6 +164,11 @@ export function buildDriverInvoicePdf(inv: DriverInvoicePdfModel): Promise<Buffe
     yL += 14;
 
     doc.text(inv.bookingReference, lx, yL, { width: lw });
+    yL += 14;
+
+    const paxLabel =
+      inv.passengerCount === 1 ? '1 passenger' : `${inv.passengerCount} passengers`;
+    doc.text(paxLabel, lx, yL, { width: lw });
     yL += 14;
 
     doc.font('Helvetica-Bold').text('INVOICE DATE', rx, yR, { width: rw });

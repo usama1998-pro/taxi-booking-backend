@@ -474,6 +474,21 @@ export class BookingsService {
     const scheduledTime = parseScheduledTime(dto.scheduledTime);
     assertPickupNotInPast(scheduledTime);
 
+    let driverId: string | undefined;
+    if (dto.driverId) {
+      const driver = await this.prisma.driver.findUnique({
+        where: { id: dto.driverId },
+        select: { id: true, isActive: true },
+      });
+      if (!driver) {
+        throw new NotFoundException(`Driver ${dto.driverId} not found`);
+      }
+      if (!driver.isActive) {
+        throw new BadRequestException(`Driver ${dto.driverId} account is disabled`);
+      }
+      driverId = driver.id;
+    }
+
     const created = await this.prisma.$transaction(
       async (tx) => {
         const bookingReference = await this.allocateBookingReference(
@@ -484,7 +499,7 @@ export class BookingsService {
         const createdBooking = await tx.booking.create({
           data: {
             userId,
-            driverId: undefined,
+            driverId,
             bookingReference,
             customerName: dto.customerName,
             customerEmail: dto.customerEmail,
@@ -520,9 +535,15 @@ export class BookingsService {
 
     const publicBooking = this.toPublicBooking(persisted);
     const skipEmails = dto.bookingReference?.trim().startsWith('BR-') === true;
-    const notifications = skipEmails
-      ? { customerEmailSent: false, ownerEmailSent: false }
-      : await this.mailService.sendBookingEmails(publicBooking);
+    const notifications = { customerEmailSent: false, ownerEmailSent: false };
+    if (!skipEmails) {
+      void this.mailService.sendBookingEmails(publicBooking).catch((err) => {
+        this.logger.warn(
+          `Booking ${publicBooking.uuid}: confirmation emails failed`,
+          err instanceof Error ? err.stack : err,
+        );
+      });
+    }
 
     return {
       ...publicBooking,

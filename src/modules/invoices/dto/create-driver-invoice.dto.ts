@@ -4,9 +4,11 @@ import { Type } from 'class-transformer';
 import {
   IsDateString,
   IsEnum,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -90,6 +92,13 @@ export class CreateDriverInvoiceDto {
   @IsString()
   @MaxLength(40)
   dropoffFlightNo?: string;
+
+  @ApiProperty({ example: 2, minimum: 1, maximum: 25 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(25)
+  passengerCount!: number;
 
   @ApiProperty({
     description:
