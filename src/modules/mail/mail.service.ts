@@ -37,6 +37,95 @@ function formatScheduledTime(iso: string | Date): string {
   });
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function formatFareEur(price: number): string {
+  return new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'EUR',
+  }).format(price);
+}
+
+function formatChildSeatsSummary(booking: BookingPublic): string | null {
+  const parts: string[] = [];
+  if (booking.infantCarrierCount > 0) {
+    parts.push(
+      `${booking.infantCarrierCount} infant carrier${booking.infantCarrierCount === 1 ? '' : 's'}`,
+    );
+  }
+  if (booking.childSeatCount > 0) {
+    parts.push(`${booking.childSeatCount} child seat${booking.childSeatCount === 1 ? '' : 's'}`);
+  }
+  if (booking.boosterCount > 0) {
+    parts.push(`${booking.boosterCount} booster${booking.boosterCount === 1 ? '' : 's'}`);
+  }
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
+function buildDetailRow(label: string, value: string): string {
+  return `<li><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</li>`;
+}
+
+function buildBookingDetailsHtml(booking: BookingPublic): string {
+  const customerName =
+    booking.customerName?.trim() ?? booking.user?.fullName?.trim() ?? '—';
+  const customerEmail =
+    booking.customerEmail?.trim().toLowerCase() ?? booking.user?.email?.trim().toLowerCase() ?? '—';
+  const customerPhone = booking.customerPhone?.trim() ?? booking.user?.phone?.trim() ?? '—';
+  const pickup = locationLabel(booking.pickupLocation as Record<string, unknown>);
+  const dropoff = locationLabel(booking.dropoffLocation as Record<string, unknown>);
+  const scheduled = formatScheduledTime(booking.scheduledTime);
+  const returnTime = booking.returnTime ? formatScheduledTime(booking.returnTime) : null;
+  const childSeats = formatChildSeatsSummary(booking);
+  const flight = booking.flightNumber?.trim() || null;
+  const note = booking.note?.trim() || null;
+  const driver = booking.driver?.name?.trim() || null;
+
+  const rows = [
+    buildDetailRow('Reference', booking.bookingReference),
+    buildDetailRow('Passenger', customerName),
+    buildDetailRow('Email', customerEmail),
+    buildDetailRow('Phone', customerPhone),
+    buildDetailRow('Pickup', pickup),
+    buildDetailRow('Drop-off', dropoff),
+    buildDetailRow('Pickup date & time', scheduled),
+  ];
+
+  if (returnTime) {
+    rows.push(buildDetailRow('Return date & time', returnTime));
+  }
+
+  rows.push(buildDetailRow('Passengers', String(booking.passengerCount)));
+  rows.push(buildDetailRow('Luggage pieces', String(booking.luggageCount)));
+
+  if (childSeats) {
+    rows.push(buildDetailRow('Child seats', childSeats));
+  }
+
+  if (flight) {
+    rows.push(buildDetailRow('Flight number', flight));
+  }
+
+  if (note) {
+    rows.push(buildDetailRow('Notes', note));
+  }
+
+  if (driver) {
+    rows.push(buildDetailRow('Driver', driver));
+  }
+
+  rows.push(buildDetailRow('Total fare', formatFareEur(booking.price)));
+  rows.push(buildDetailRow('Status', booking.status));
+
+  return `<ul>${rows.join('')}</ul>`;
+}
+
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
@@ -56,28 +145,7 @@ export class MailService {
     }
 
     const reference = booking?.bookingReference ?? 'your booking';
-    const pickup = booking
-      ? locationLabel(booking.pickupLocation as Record<string, unknown>)
-      : null;
-    const dropoff = booking
-      ? locationLabel(booking.dropoffLocation as Record<string, unknown>)
-      : null;
-    const scheduled = booking?.scheduledTime
-      ? formatScheduledTime(booking.scheduledTime)
-      : null;
-
-    const details =
-      booking && pickup && dropoff && scheduled
-        ? `
-        <ul>
-          <li><strong>Reference:</strong> ${booking.bookingReference}</li>
-          <li><strong>Pickup:</strong> ${pickup}</li>
-          <li><strong>Drop-off:</strong> ${dropoff}</li>
-          <li><strong>Scheduled:</strong> ${scheduled}</li>
-          <li><strong>Passengers:</strong> ${booking.passengerCount}</li>
-        </ul>
-      `
-        : '';
+    const details = booking ? buildBookingDetailsHtml(booking) : '';
 
     try {
       await this.mailerService.sendMail({
@@ -85,8 +153,8 @@ export class MailService {
         subject: `Booking confirmed — ${reference}`,
         html: `
           <h1>Booking confirmed</h1>
-          <p>Thank you. Your taxi booking (${reference}) was received successfully.</p>
-          ${details}
+          <p>Thank you. Your taxi booking (${escapeHtml(reference)}) was received successfully.</p>
+          ${details ? `<h2>Booking details</h2>${details}` : ''}
           <p>We will contact you if anything changes.</p>
         `,
       });
@@ -109,32 +177,14 @@ export class MailService {
       return false;
     }
 
-    const customerEmail =
-      booking.customerEmail?.trim().toLowerCase() ??
-      booking.user?.email?.trim().toLowerCase() ??
-      '—';
-    const customerName =
-      booking.customerName?.trim() ?? booking.user?.fullName?.trim() ?? '—';
-    const pickup = locationLabel(booking.pickupLocation as Record<string, unknown>);
-    const dropoff = locationLabel(booking.dropoffLocation as Record<string, unknown>);
-    const scheduled = formatScheduledTime(booking.scheduledTime);
-
     try {
       await this.mailerService.sendMail({
         to: notifyTo,
         subject: `New booking — ${booking.bookingReference}`,
         html: `
           <h1>New booking received</h1>
-          <ul>
-            <li><strong>Reference:</strong> ${booking.bookingReference}</li>
-            <li><strong>Customer:</strong> ${customerName}</li>
-            <li><strong>Email:</strong> ${customerEmail}</li>
-            <li><strong>Phone:</strong> ${booking.customerPhone ?? booking.user?.phone ?? '—'}</li>
-            <li><strong>Pickup:</strong> ${pickup}</li>
-            <li><strong>Drop-off:</strong> ${dropoff}</li>
-            <li><strong>Scheduled:</strong> ${scheduled}</li>
-            <li><strong>Status:</strong> ${booking.status}</li>
-          </ul>
+          <h2>Booking details</h2>
+          ${buildBookingDetailsHtml(booking)}
         `,
       });
       return true;

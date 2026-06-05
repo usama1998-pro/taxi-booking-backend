@@ -1,14 +1,14 @@
 networks:
-  taxi-booking-network:
+  taxi-booking:
     external: true
-    name: taxi-booking-network
+    name: taxi-booking
 
 services:
   mysql:
     image: mysql:8.4
     restart: unless-stopped
     networks:
-      - taxi-booking-network
+      - taxi-booking
     environment:
       TZ: Europe/Madrid
       MYSQL_DATABASE: ${DATABASE_NAME:-taxi_booking}
