@@ -25,7 +25,7 @@ export type DriverInvoicePdfModel = {
   createdAt: string;
 };
 
-const COMPANY_NAME = 'Taxi Barcelona 24';
+const COMPANY_NAME = 'BarcelonaTaxi24';
 const COMPANY_LINES = [
   'Barcelona International Airport, 08820 El Prat de Llobregat, Barcelona, Spain',
   '0034663619000',

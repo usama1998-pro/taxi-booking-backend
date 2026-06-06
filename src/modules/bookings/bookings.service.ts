@@ -464,6 +464,7 @@ export class BookingsService {
       infantCarrierCount,
       childSeatCount,
       boosterCount,
+      isReturnTrip: Boolean(dto.returnTime),
     });
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -797,13 +798,20 @@ export class BookingsService {
       d.infantCarrierCount ?? booking.infantCarrierCount;
     const nextChildSeatCount = d.childSeatCount ?? booking.childSeatCount;
     const nextBoosterCount = d.boosterCount ?? booking.boosterCount;
+    const nextReturnTime =
+      d.returnTime !== undefined
+        ? d.returnTime
+          ? new Date(d.returnTime)
+          : null
+        : booking.returnTime;
 
     const seatsOrTripCountsChanged =
       d.passengerCount !== undefined ||
       d.luggageCount !== undefined ||
       d.infantCarrierCount !== undefined ||
       d.childSeatCount !== undefined ||
-      d.boosterCount !== undefined;
+      d.boosterCount !== undefined ||
+      d.returnTime !== undefined;
 
     if (d.price !== undefined) {
       data.price = d.price;
@@ -814,6 +822,7 @@ export class BookingsService {
         infantCarrierCount: nextInfantCarrierCount,
         childSeatCount: nextChildSeatCount,
         boosterCount: nextBoosterCount,
+        isReturnTrip: Boolean(nextReturnTime),
       });
     }
     if (d.status !== undefined) {

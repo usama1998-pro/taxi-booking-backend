@@ -171,18 +171,26 @@ export class MailService {
   async sendNewBookingAlert(booking: BookingPublic): Promise<boolean> {
     const notifyTo = getBookingNotifyEmail();
     if (!notifyTo) {
+      this.logger.warn(
+        'BOOKING_NOTIFY_EMAIL / SMTP_USER not set — skipping owner new-booking alert',
+      );
       return false;
     }
     if (!this.mailerService || !isSmtpConfigured()) {
+      this.logger.warn('SMTP not configured — skipping owner new-booking alert');
       return false;
     }
+
+    const reference = booking.bookingReference;
+    const heading = `New Booking - ${reference}`;
 
     try {
       await this.mailerService.sendMail({
         to: notifyTo,
-        subject: `New booking — ${booking.bookingReference}`,
+        subject: heading,
         html: `
-          <h1>New booking received</h1>
+          <h1>${escapeHtml(heading)}</h1>
+          <p>A new taxi booking has been received. Customer and trip details are below.</p>
           <h2>Booking details</h2>
           ${buildBookingDetailsHtml(booking)}
         `,

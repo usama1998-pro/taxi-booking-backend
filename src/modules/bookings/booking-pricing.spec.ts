@@ -46,6 +46,45 @@ describe('calculateBookingPrice', () => {
         childSeatCount: 0,
         boosterCount: 0,
       }),
-    ).toBe(57);
+    ).toBe(59);
+  });
+
+  it('doubles the full one-way total for return trips', () => {
+    expect(
+      calculateBookingPrice({
+        passengerCount: 1,
+        luggageCount: 1,
+        infantCarrierCount: 0,
+        childSeatCount: 0,
+        boosterCount: 0,
+        isReturnTrip: true,
+      }),
+    ).toBe(104);
+  });
+
+  it('doubles 2 pax / 6 luggage + infant on return (€84 → €168)', () => {
+    expect(
+      calculateBookingPrice({
+        passengerCount: 2,
+        luggageCount: 6,
+        infantCarrierCount: 1,
+        childSeatCount: 0,
+        boosterCount: 0,
+        isReturnTrip: true,
+      }),
+    ).toBe(168);
+  });
+
+  it('doubles 1 pax / 8 luggage on return (€110 → €220)', () => {
+    expect(
+      calculateBookingPrice({
+        passengerCount: 1,
+        luggageCount: 8,
+        infantCarrierCount: 0,
+        childSeatCount: 0,
+        boosterCount: 0,
+        isReturnTrip: true,
+      }),
+    ).toBe(220);
   });
 });

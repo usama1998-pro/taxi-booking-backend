@@ -49,15 +49,19 @@ export function getSmtpConfig(): SmtpConfig | null {
     secure: port === 465 ? true : secure,
     user: process.env.SMTP_USER!.trim(),
     pass: process.env.SMTP_PASS!.trim(),
-    fromName: process.env.MAIL_FROM_NAME?.trim() || 'Taxi Booking',
+    fromName: process.env.MAIL_FROM_NAME?.trim() || 'BarcelonaTaxi24',
   };
 }
 
-/** Dispatcher / owner inbox for new-booking alerts (falls back to SUPER_ADMIN_EMAIL). */
+/** Dispatcher / owner inbox for new-booking alerts. */
 export function getBookingNotifyEmail(): string | null {
   const notify = process.env.BOOKING_NOTIFY_EMAIL?.trim().toLowerCase();
   if (notify) {
     return notify;
+  }
+  const smtpUser = process.env.SMTP_USER?.trim().toLowerCase();
+  if (smtpUser?.includes('@')) {
+    return smtpUser;
   }
   const superAdmin = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
   return superAdmin || null;

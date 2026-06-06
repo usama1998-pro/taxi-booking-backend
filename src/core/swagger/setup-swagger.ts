@@ -9,7 +9,7 @@ export function getSwaggerPath(): string {
 
 export function setupSwagger(app: INestApplication): void {
   const config = new DocumentBuilder()
-    .setTitle('Taxi Booking API')
+    .setTitle('BarcelonaTaxi24 API')
     .setDescription('HTTP API for the taxi booking backend')
     .setVersion('1.0')
     .addBearerAuth(

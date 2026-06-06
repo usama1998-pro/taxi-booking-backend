@@ -42,7 +42,8 @@ export class CreateDriverInvoiceDto {
   pickupKind!: InvoiceAddressKind;
 
   @ApiPropertyOptional({
-    description: 'When pickupKind is LOCATION: optional street / meeting point.',
+    description:
+      'When pickupKind is LOCATION: optional street / meeting point.',
   })
   @IsOptional()
   @IsString()
@@ -70,7 +71,8 @@ export class CreateDriverInvoiceDto {
   dropoffKind!: InvoiceAddressKind;
 
   @ApiPropertyOptional({
-    description: 'When dropoffKind is LOCATION: optional street / meeting point.',
+    description:
+      'When dropoffKind is LOCATION: optional street / meeting point.',
   })
   @IsOptional()
   @IsString()
