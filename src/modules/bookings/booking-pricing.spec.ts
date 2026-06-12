@@ -1,5 +1,6 @@
 import {
   calculateBookingPrice,
+  calculateDistanceSurcharge,
   calculatePassengerLuggageFare,
 } from './booking-pricing';
 
@@ -86,5 +87,87 @@ describe('calculateBookingPrice', () => {
         isReturnTrip: true,
       }),
     ).toBe(220);
+  });
+});
+
+describe('calculateDistanceSurcharge', () => {
+  it.each([
+    [0, 0],
+    [16.9, 0],
+    [17, 68],
+    [25, 100],
+    [32, 128],
+    [33, 66],
+    [50, 100],
+    [92.1, 184.2],
+  ])('%s km → €%s surcharge', (km, surcharge) => {
+    expect(calculateDistanceSurcharge(km)).toBe(surcharge);
+  });
+});
+
+describe('calculateBookingPrice with distance', () => {
+  it('adds luggage tier and distance from 17 km to 32 km', () => {
+    expect(
+      calculateBookingPrice({
+        passengerCount: 1,
+        luggageCount: 1,
+        infantCarrierCount: 0,
+        childSeatCount: 0,
+        boosterCount: 0,
+        distanceKm: 20,
+      }),
+    ).toBe(132);
+  });
+
+  it('uses distance-only pricing above 32 km without luggage tier', () => {
+    expect(
+      calculateBookingPrice({
+        passengerCount: 1,
+        luggageCount: 1,
+        infantCarrierCount: 0,
+        childSeatCount: 0,
+        boosterCount: 0,
+        distanceKm: 40,
+      }),
+    ).toBe(80);
+  });
+
+  it('charges 92.1 km at €2/km with no luggage tier (€184)', () => {
+    expect(
+      calculateBookingPrice({
+        passengerCount: 2,
+        luggageCount: 4,
+        infantCarrierCount: 0,
+        childSeatCount: 0,
+        boosterCount: 0,
+        distanceKm: 92.1,
+      }),
+    ).toBe(184);
+  });
+
+  it('still uses luggage tiers below 17 km', () => {
+    expect(
+      calculateBookingPrice({
+        passengerCount: 1,
+        luggageCount: 1,
+        infantCarrierCount: 0,
+        childSeatCount: 0,
+        boosterCount: 0,
+        distanceKm: 16,
+      }),
+    ).toBe(52);
+  });
+
+  it('includes luggage tier at exactly 32 km', () => {
+    expect(
+      calculateBookingPrice({
+        passengerCount: 1,
+        luggageCount: 1,
+        infantCarrierCount: 0,
+        childSeatCount: 0,
+        boosterCount: 0,
+        distanceKm: 32,
+      }),
+    ).toBe(180);
   });
 });
