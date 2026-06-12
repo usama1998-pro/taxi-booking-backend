@@ -10,6 +10,7 @@ import { InvoicesModule } from './modules/invoices/invoices.module';
 import { MailModule } from './modules/mail/mail.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { UsersModule } from './modules/users/users.module';
+import { RoutingModule } from './modules/routing/routing.module';
 import { ViatorInboxModule } from './modules/viator-inbox/viator-inbox.module';
 
 @Module({
@@ -25,6 +26,7 @@ import { ViatorInboxModule } from './modules/viator-inbox/viator-inbox.module';
     InsightsModule,
     InvoicesModule,
     PaymentsModule,
+    RoutingModule,
     ViatorInboxModule,
   ],
 })

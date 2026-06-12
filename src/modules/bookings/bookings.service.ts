@@ -26,6 +26,7 @@ import {
 } from './dto/list-bookings-query.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
 import { MailService } from '../mail/mail.service';
+import { RoutingService } from '../routing/routing.service';
 import { activeBookingWhere } from './booking-active.where';
 import {
   displayBookingReference,
@@ -107,8 +108,36 @@ export class BookingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
+    private readonly routing: RoutingService,
   ) {}
   private readonly logger = new Logger(BookingsService.name);
+
+  private extractLocationLabel(location: Record<string, unknown>): string | null {
+    const label = location.label;
+    if (typeof label === 'string' && label.trim()) {
+      return label.trim();
+    }
+    return null;
+  }
+
+  private async resolveBookingDistanceKm(
+    pickupLocation: Record<string, unknown>,
+    dropoffLocation: Record<string, unknown>,
+  ): Promise<number | undefined> {
+    const from = this.extractLocationLabel(pickupLocation);
+    const to = this.extractLocationLabel(dropoffLocation);
+    if (!from || !to) {
+      return undefined;
+    }
+    try {
+      return await this.routing.getDrivingDistanceKm(from, to);
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : 'Distance lookup failed';
+      this.logger.warn(`Booking distance lookup failed: ${detail}`);
+      return undefined;
+    }
+  }
 
   private viatorReferencesForBooking(bookingReference: string): string[] {
     const refs = new Set<string>([
@@ -458,6 +487,10 @@ export class BookingsService {
     const infantCarrierCount = dto.infantCarrierCount ?? 0;
     const childSeatCount = dto.childSeatCount ?? 0;
     const boosterCount = dto.boosterCount ?? 0;
+    const distanceKm = await this.resolveBookingDistanceKm(
+      dto.pickupLocation,
+      dto.dropoffLocation,
+    );
     const computedPrice = calculateBookingPrice({
       passengerCount: dto.passengerCount,
       luggageCount: dto.luggageCount,
@@ -465,6 +498,7 @@ export class BookingsService {
       childSeatCount,
       boosterCount,
       isReturnTrip: Boolean(dto.returnTime),
+      distanceKm,
     });
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -811,11 +845,21 @@ export class BookingsService {
       d.infantCarrierCount !== undefined ||
       d.childSeatCount !== undefined ||
       d.boosterCount !== undefined ||
-      d.returnTime !== undefined;
+      d.returnTime !== undefined ||
+      d.pickupLocation !== undefined ||
+      d.dropoffLocation !== undefined;
 
     if (d.price !== undefined) {
       data.price = d.price;
     } else if (seatsOrTripCountsChanged) {
+      const pickupLocation = (d.pickupLocation ??
+        booking.pickupLocation) as Record<string, unknown>;
+      const dropoffLocation = (d.dropoffLocation ??
+        booking.dropoffLocation) as Record<string, unknown>;
+      const distanceKm = await this.resolveBookingDistanceKm(
+        pickupLocation,
+        dropoffLocation,
+      );
       data.price = calculateBookingPrice({
         passengerCount: nextPassengerCount,
         luggageCount: nextLuggageCount,
@@ -823,6 +867,7 @@ export class BookingsService {
         childSeatCount: nextChildSeatCount,
         boosterCount: nextBoosterCount,
         isReturnTrip: Boolean(nextReturnTime),
+        distanceKm,
       });
     }
     if (d.status !== undefined) {
