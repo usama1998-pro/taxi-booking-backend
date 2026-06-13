@@ -4,7 +4,6 @@ import {
   calculateDistanceSurcharge,
   calculatePassengerLuggageFare,
   DISTANCE_SHORT_TRIP_MAX_KM,
-  usesPassengerLuggagePricing,
 } from '../bookings/booking-pricing';
 import { GoogleDirectionsApiClient } from './clients/google-directions-api.client';
 import { GooglePlacesApiClient } from './clients/google-places-api.client';
@@ -48,7 +47,6 @@ export class RoutingService {
       dto.passengerCount,
       dto.luggageCount,
     );
-    const usesTierPricing = usesPassengerLuggagePricing(distanceKm);
     const distanceSurchargeEur =
       distanceKm >= DISTANCE_SHORT_TRIP_MAX_KM
         ? calculateDistanceSurcharge(distanceKm)
@@ -66,7 +64,7 @@ export class RoutingService {
     return {
       distanceKm: Math.round(distanceKm * 10) / 10,
       distanceSurchargeEur: Math.round(distanceSurchargeEur),
-      baseFareEur: usesTierPricing ? passengerLuggageFare : 0,
+      baseFareEur: passengerLuggageFare,
       estimatedPriceEur,
       durationMinutes: Math.round(route.durationSeconds / 60),
     };

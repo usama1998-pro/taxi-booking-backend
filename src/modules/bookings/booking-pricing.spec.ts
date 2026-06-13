@@ -119,7 +119,7 @@ describe('calculateBookingPrice with distance', () => {
     ).toBe(132);
   });
 
-  it('uses distance-only pricing above 32 km without luggage tier', () => {
+  it('adds luggage tier and distance above 32 km', () => {
     expect(
       calculateBookingPrice({
         passengerCount: 1,
@@ -129,10 +129,10 @@ describe('calculateBookingPrice with distance', () => {
         boosterCount: 0,
         distanceKm: 40,
       }),
-    ).toBe(80);
+    ).toBe(132);
   });
 
-  it('charges 92.1 km at €2/km with no luggage tier (€184)', () => {
+  it('adds luggage tier and distance for 92.1 km (€62 + €184 = €246)', () => {
     expect(
       calculateBookingPrice({
         passengerCount: 2,
@@ -142,7 +142,7 @@ describe('calculateBookingPrice with distance', () => {
         boosterCount: 0,
         distanceKm: 92.1,
       }),
-    ).toBe(184);
+    ).toBe(246);
   });
 
   it('still uses luggage tiers below 17 km', () => {
