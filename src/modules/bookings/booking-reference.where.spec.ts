@@ -1,5 +1,7 @@
 import {
-  bookingReferenceSearchWhere,
+  bookingReferenceSearchLikePattern,
+  bookingReferenceSearchNeedle,
+  escapeMysqlLikePattern,
   normalizeBookingReference,
   reservedBookingReferenceWhere,
   trashedBookingReference,
@@ -33,15 +35,25 @@ describe('trashedBookingReferenceRange', () => {
   });
 });
 
-describe('bookingReferenceSearchWhere', () => {
-  it('returns contains filter with uppercase needle', () => {
-    expect(bookingReferenceSearchWhere('  br-1399  ')).toEqual({
-      bookingReference: { contains: 'BR-1399' },
-    });
+describe('bookingReferenceSearchNeedle', () => {
+  it('trims and uppercases', () => {
+    expect(bookingReferenceSearchNeedle('  br-1399  ')).toBe('BR-1399');
   });
 
   it('returns null for empty query', () => {
-    expect(bookingReferenceSearchWhere('   ')).toBeNull();
+    expect(bookingReferenceSearchNeedle('   ')).toBeNull();
+  });
+});
+
+describe('bookingReferenceSearchLikePattern', () => {
+  it('wraps escaped needle for LIKE', () => {
+    expect(bookingReferenceSearchLikePattern('br-13%9')).toBe('%BR-13\\%9%');
+  });
+});
+
+describe('escapeMysqlLikePattern', () => {
+  it('escapes wildcards and backslashes', () => {
+    expect(escapeMysqlLikePattern('a%b_c\\d')).toBe('a\\%b\\_c\\\\d');
   });
 });
 

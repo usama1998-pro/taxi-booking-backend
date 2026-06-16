@@ -55,17 +55,29 @@ export function trashedBookingReferenceRange(liveReference: string): {
  * Match a booking reference on active rows or trashed rows (same `Booking` table).
  * Legacy soft-deletes may have `BR-…#trash-{uuid}` — matched via string range, not `LIKE`.
  */
-/** Partial booking-reference filter for list search (`contains`, uppercase needle). */
-export function bookingReferenceSearchWhere(
-  rawQuery: string,
-): Prisma.BookingWhereInput | null {
+/**
+ * Partial booking-reference search needle (uppercase). Returns null when empty.
+ */
+export function bookingReferenceSearchNeedle(rawQuery: string): string | null {
   const needle = rawQuery.trim().toUpperCase();
+  return needle.length > 0 ? needle : null;
+}
+
+/** Escape `%`, `_`, `\` for SQL `LIKE` (default escape `\`). */
+export function escapeMysqlLikePattern(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/[%_]/g, '\\$&');
+}
+
+/**
+ * `LIKE` pattern for partial ref search. Caller must apply `COLLATE utf8mb4_unicode_ci`
+ * on both sides in raw SQL — Prisma `contains` triggers collation errors on MariaDB/MySQL.
+ */
+export function bookingReferenceSearchLikePattern(rawQuery: string): string | null {
+  const needle = bookingReferenceSearchNeedle(rawQuery);
   if (!needle) {
     return null;
   }
-  return {
-    bookingReference: { contains: needle },
-  };
+  return `%${escapeMysqlLikePattern(needle)}%`;
 }
 
 export function reservedBookingReferenceWhere(

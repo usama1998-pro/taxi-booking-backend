@@ -29,7 +29,7 @@ import { MailService } from '../mail/mail.service';
 import { RoutingService } from '../routing/routing.service';
 import { activeBookingWhere } from './booking-active.where';
 import {
-  bookingReferenceSearchWhere,
+  bookingReferenceSearchLikePattern,
   displayBookingReference,
   normalizeBookingReference,
   reservedBookingReferenceWhere,
@@ -209,6 +209,29 @@ export class BookingsService {
       where: { uuid, ...activeBookingWhere },
       include: bookingInclude,
     });
+  }
+
+  /**
+   * Partial ref search via raw SQL — Prisma `contains` triggers
+   * `Illegal mix of collations` on MariaDB/MySQL production hosts.
+   */
+  private async bookingIdsForReferenceSearch(
+    rawQuery: string,
+  ): Promise<string[] | null> {
+    const pattern = bookingReferenceSearchLikePattern(rawQuery);
+    if (!pattern) {
+      return null;
+    }
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>(
+      Prisma.sql`
+        SELECT id
+        FROM Booking
+        WHERE deleted_at IS NULL
+          AND booking_reference COLLATE utf8mb4_unicode_ci
+            LIKE ${pattern} COLLATE utf8mb4_unicode_ci
+      `,
+    );
+    return rows.map((row) => row.id);
   }
 
   private async hardDeleteBookingInTx(
@@ -623,17 +646,23 @@ export class BookingsService {
         })()
       : null;
 
-    const refFilter = bookingReferenceSearchWhere(query.bookingReference ?? '');
+    const refSearchIds = query.bookingReference
+      ? await this.bookingIdsForReferenceSearch(query.bookingReference)
+      : null;
 
     let where: Prisma.BookingWhereInput = baseWhere;
     let orderBy: Prisma.BookingOrderByWithRelationInput | Prisma.BookingOrderByWithRelationInput[] =
       { createdAt: 'desc' };
 
-    if (refFilter) {
+    if (refSearchIds !== null) {
+      const idFilter: Prisma.BookingWhereInput =
+        refSearchIds.length > 0
+          ? { id: { in: refSearchIds } }
+          : { id: '__booking_ref_search_no_match__' };
       where = {
         AND: [
           baseWhere,
-          refFilter,
+          idFilter,
           ...(scheduledDayFilter ? [scheduledDayFilter] : []),
         ],
       };
