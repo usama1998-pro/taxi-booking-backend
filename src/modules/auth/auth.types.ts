@@ -10,7 +10,7 @@ export interface JwtPayload {
   is_admin: boolean;
   /** Present on staff (`typ: user`) JWTs from sign-in. Omitted for drivers. */
   is_super_admin?: boolean;
-  /** Matches `User.tokenVersion` / `Driver.tokenVersion`; incremented on each signin to invalidate older JWTs. */
+  /** Matches `User.tokenVersion` / `Driver.tokenVersion`; rotates only when explicit invalidation is required. */
   tv?: number;
   /** Session id for server-side signout (revocation) until `exp` (new tokens only). */
   jti?: string;

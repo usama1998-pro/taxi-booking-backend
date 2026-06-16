@@ -62,18 +62,13 @@ export class AuthService {
       user?.isAdmin &&
       (await bcrypt.compare(dto.password, user.password))
     ) {
-      const { tokenVersion } = await this.prisma.user.update({
-        where: { id: user.id },
-        data: { tokenVersion: { increment: 1 } },
-        select: { tokenVersion: true },
-      });
       return this.signAccessToken({
         sub: user.id,
         email: user.email,
         typ: 'user',
         is_admin: true,
         is_super_admin: user.isSuperAdmin,
-        tv: tokenVersion,
+        tv: user.tokenVersion,
       });
     }
 
@@ -84,17 +79,12 @@ export class AuthService {
       if (!driver.isActive) {
         throw new UnauthorizedException('Driver account is disabled');
       }
-      const { tokenVersion } = await this.prisma.driver.update({
-        where: { id: driver.id },
-        data: { tokenVersion: { increment: 1 } },
-        select: { tokenVersion: true },
-      });
       return this.signAccessToken({
         sub: driver.id,
         email: driver.email,
         typ: 'driver',
         is_admin: false,
-        tv: tokenVersion,
+        tv: driver.tokenVersion,
       });
     }
 
@@ -116,6 +106,7 @@ export class AuthService {
             id: true,
             email: true,
             isActive: true,
+            tokenVersion: true,
           },
         },
       },
@@ -126,17 +117,12 @@ export class AuthService {
     if (!match.driver.isActive) {
       throw new UnauthorizedException('Driver account is disabled');
     }
-    const { tokenVersion } = await this.prisma.driver.update({
-      where: { id: match.driver.id },
-      data: { tokenVersion: { increment: 1 } },
-      select: { tokenVersion: true },
-    });
     return this.signAccessToken({
       sub: match.driver.id,
       email: match.driver.email,
       typ: 'driver',
       is_admin: false,
-      tv: tokenVersion,
+      tv: match.driver.tokenVersion,
     });
   }
 

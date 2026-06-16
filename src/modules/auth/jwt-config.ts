@@ -10,5 +10,7 @@ export function getJwtSecret(): string {
 }
 
 export function getJwtExpiresIn(): string {
-  return process.env.JWT_EXPIRES_IN?.trim() || '7d';
+  // Long-lived by default so sessions persist across app restarts/devices.
+  // Explicit signout still revokes the active token via jti revocation.
+  return process.env.JWT_EXPIRES_IN?.trim() || '100y';
 }
