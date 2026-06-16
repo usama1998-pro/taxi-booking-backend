@@ -1,4 +1,5 @@
 import {
+  bookingReferenceSearchWhere,
   normalizeBookingReference,
   reservedBookingReferenceWhere,
   trashedBookingReference,
@@ -29,6 +30,18 @@ describe('trashedBookingReferenceRange', () => {
       gte: 'BR-123#trash-',
       lt: 'BR-123#trash.',
     });
+  });
+});
+
+describe('bookingReferenceSearchWhere', () => {
+  it('returns contains filter with uppercase needle', () => {
+    expect(bookingReferenceSearchWhere('  br-1399  ')).toEqual({
+      bookingReference: { contains: 'BR-1399' },
+    });
+  });
+
+  it('returns null for empty query', () => {
+    expect(bookingReferenceSearchWhere('   ')).toBeNull();
   });
 });
 

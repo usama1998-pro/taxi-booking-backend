@@ -55,6 +55,19 @@ export function trashedBookingReferenceRange(liveReference: string): {
  * Match a booking reference on active rows or trashed rows (same `Booking` table).
  * Legacy soft-deletes may have `BR-…#trash-{uuid}` — matched via string range, not `LIKE`.
  */
+/** Partial booking-reference filter for list search (`contains`, uppercase needle). */
+export function bookingReferenceSearchWhere(
+  rawQuery: string,
+): Prisma.BookingWhereInput | null {
+  const needle = rawQuery.trim().toUpperCase();
+  if (!needle) {
+    return null;
+  }
+  return {
+    bookingReference: { contains: needle },
+  };
+}
+
 export function reservedBookingReferenceWhere(
   bookingReference: string,
 ): Prisma.BookingWhereInput {

@@ -29,6 +29,7 @@ import { MailService } from '../mail/mail.service';
 import { RoutingService } from '../routing/routing.service';
 import { activeBookingWhere } from './booking-active.where';
 import {
+  bookingReferenceSearchWhere,
   displayBookingReference,
   normalizeBookingReference,
   reservedBookingReferenceWhere,
@@ -622,11 +623,22 @@ export class BookingsService {
         })()
       : null;
 
+    const refFilter = bookingReferenceSearchWhere(query.bookingReference ?? '');
+
     let where: Prisma.BookingWhereInput = baseWhere;
     let orderBy: Prisma.BookingOrderByWithRelationInput | Prisma.BookingOrderByWithRelationInput[] =
       { createdAt: 'desc' };
 
-    if (query.timeScope === BookingTimeScope.Past) {
+    if (refFilter) {
+      where = {
+        AND: [
+          baseWhere,
+          refFilter,
+          ...(scheduledDayFilter ? [scheduledDayFilter] : []),
+        ],
+      };
+      orderBy = { scheduledTime: 'desc' };
+    } else if (query.timeScope === BookingTimeScope.Past) {
       const { startOfToday } = getBookingListScheduledDayBounds();
       where = {
         AND: [

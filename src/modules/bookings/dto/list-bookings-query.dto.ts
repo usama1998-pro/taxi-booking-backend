@@ -1,6 +1,15 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 /** When set, filters the list for driver/passenger trip timelines. Omit `timeScope` for an unfiltered list (`createdAt` desc). */
 export enum BookingTimeScope {
@@ -53,4 +62,14 @@ export class ListBookingsQueryDto {
   @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   scheduledOn?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Partial match on `bookingReference` (case-insensitive). When set, `timeScope` is ignored so a ref can be found regardless of tab.',
+    example: 'BR-1399',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  bookingReference?: string;
 }
