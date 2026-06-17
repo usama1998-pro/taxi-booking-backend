@@ -33,7 +33,8 @@
     "db:flush": "ts-node scripts/flush-db.ts",
     "send-viator-test-email": "ts-node scripts/send-viator-test-email.ts",
     "debug-viator-inbox-test": "ts-node scripts/debug-viator-inbox-test.ts",
-    "run-viator-test-import-once": "ts-node scripts/run-viator-test-import-once.ts"
+    "run-viator-test-import-once": "ts-node scripts/run-viator-test-import-once.ts",
+    "seed-test-bookings": "ts-node scripts/seed-test-bookings.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.3.5",
