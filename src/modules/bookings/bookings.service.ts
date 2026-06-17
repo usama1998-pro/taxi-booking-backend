@@ -469,6 +469,27 @@ export class BookingsService {
    * Viator imports must not create passenger users. They are attached to an existing
    * staff account so `create()` skips `resolveOrCreatePublicBookingUserId()`.
    */
+  private isAppGuestBookingEmail(email: string | undefined): boolean {
+    const normalized = email?.trim().toLowerCase() ?? '';
+    return normalized.startsWith('guest.') && normalized.endsWith('@taxibarcelona24.guest');
+  }
+
+  private isViatorEmailImport(dto: CreateBookingDto): boolean {
+    if (this.isAppGuestBookingEmail(dto.customerEmail)) {
+      return false;
+    }
+    const ref = dto.bookingReference?.trim() ?? '';
+    if (ref.startsWith('BR-')) {
+      return true;
+    }
+    const email = dto.customerEmail?.trim().toLowerCase() ?? '';
+    if (email.startsWith('viator.')) {
+      return true;
+    }
+    const note = dto.note?.trim() ?? '';
+    return note.startsWith('[Viator');
+  }
+
   private async resolveViatorBookingUserId(): Promise<string> {
     const configuredStaffEmail = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
     if (configuredStaffEmail) {
@@ -502,7 +523,7 @@ export class BookingsService {
   }
 
   async create(dto: CreateBookingDto): Promise<BookingCreateResult> {
-    const isViatorImport = dto.bookingReference?.trim().startsWith('BR-') === true;
+    const isViatorImport = this.isViatorEmailImport(dto);
     const userId =
       dto.userId ??
       (isViatorImport
@@ -593,7 +614,7 @@ export class BookingsService {
     }
 
     const publicBooking = this.toPublicBooking(persisted);
-    const skipEmails = dto.bookingReference?.trim().startsWith('BR-') === true;
+    const skipEmails = this.isViatorEmailImport(dto);
     let notifications = { customerEmailSent: false, ownerEmailSent: false };
     if (!skipEmails) {
       try {
