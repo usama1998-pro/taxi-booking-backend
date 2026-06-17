@@ -138,7 +138,16 @@ export class MailService {
     return isSmtpConfigured() && Boolean(this.mailerService);
   }
 
+  private smtpLogContext(): string {
+    const smtp = getSmtpConfig();
+    if (!smtp) {
+      return 'smtp=not-configured';
+    }
+    return `from=${smtp.user} host=${smtp.host}:${smtp.port} secure=${smtp.secure}`;
+  }
+
   async sendBookingConfirmation(to: string, booking?: BookingPublic): Promise<boolean> {
+    const recipient = to.trim().toLowerCase();
     if (!this.mailerService || !isSmtpConfigured()) {
       this.logger.warn('SMTP not configured — skipping booking confirmation email');
       return false;
@@ -147,9 +156,12 @@ export class MailService {
     const reference = booking?.bookingReference ?? 'your booking';
     const details = booking ? buildBookingDetailsHtml(booking) : '';
 
+    this.logger.log(
+      `Sending booking confirmation: reference=${reference} to=${recipient} ${this.smtpLogContext()}`,
+    );
     try {
       await this.mailerService.sendMail({
-        to: to.trim().toLowerCase(),
+        to: recipient,
         subject: `Booking confirmed — ${reference}`,
         html: `
           <h1>Booking confirmed</h1>
@@ -158,10 +170,13 @@ export class MailService {
           <p>We will contact you if anything changes.</p>
         `,
       });
+      this.logger.log(
+        `Booking confirmation sent: reference=${reference} to=${recipient}`,
+      );
       return true;
     } catch (err) {
       this.logger.error(
-        `Failed to send booking confirmation to ${to}`,
+        `Failed to send booking confirmation: reference=${reference} to=${recipient} (${this.smtpLogContext()})`,
         err instanceof Error ? err.stack : String(err),
       );
       return false;
@@ -184,6 +199,9 @@ export class MailService {
     const reference = booking.bookingReference;
     const heading = `New Booking - ${reference}`;
 
+    this.logger.log(
+      `Sending new-booking alert: reference=${reference} to=${notifyTo} ${this.smtpLogContext()}`,
+    );
     try {
       await this.mailerService.sendMail({
         to: notifyTo,
@@ -195,10 +213,13 @@ export class MailService {
           ${buildBookingDetailsHtml(booking)}
         `,
       });
+      this.logger.log(
+        `New-booking alert sent: reference=${reference} to=${notifyTo}`,
+      );
       return true;
     } catch (err) {
       this.logger.error(
-        `Failed to send new-booking alert to ${notifyTo}`,
+        `Failed to send new-booking alert: reference=${reference} to=${notifyTo} (${this.smtpLogContext()})`,
         err instanceof Error ? err.stack : String(err),
       );
       return false;
@@ -209,6 +230,11 @@ export class MailService {
     const customerEmail =
       booking.customerEmail?.trim().toLowerCase() ??
       booking.user?.email?.trim().toLowerCase();
+    const notifyTo = getBookingNotifyEmail();
+
+    this.logger.log(
+      `Sending booking emails: reference=${booking.bookingReference} customer=${customerEmail ?? 'none'} owner=${notifyTo ?? 'none'}`,
+    );
 
     const [customerEmailSent, ownerEmailSent] = await Promise.all([
       customerEmail
@@ -217,10 +243,14 @@ export class MailService {
       this.sendNewBookingAlert(booking),
     ]);
 
+    this.logger.log(
+      `Booking emails finished: reference=${booking.bookingReference} customerEmailSent=${customerEmailSent} ownerEmailSent=${ownerEmailSent}`,
+    );
+
     return { customerEmailSent, ownerEmailSent };
   }
 
-  async sendTestEmail(to: string): Promise<void> {
+  async sendTestEmail(to: string): Promise<{ sentTo: string[] }> {
     const recipient = to.trim().toLowerCase();
     if (!this.mailerService || !isSmtpConfigured()) {
       this.logger.warn('SMTP not configured — cannot send test email');
@@ -229,22 +259,46 @@ export class MailService {
       );
     }
     const smtp = getSmtpConfig()!;
+    const notifyTo = getBookingNotifyEmail();
+    const recipients = [...new Set([recipient, notifyTo].filter(Boolean) as string[])];
+
     this.logger.log(
-      `Sending SMTP test email: to=${recipient} from=${smtp.user} host=${smtp.host}:${smtp.port} secure=${smtp.secure}`,
+      `Sending SMTP test email: to=${recipients.join(',')} ${this.smtpLogContext()}`,
     );
-    try {
-      await this.mailerService.sendMail({
-        to: recipient,
-        subject: 'SMTP test — taxi booking API',
-        html: `<p>SMTP from <strong>${smtp.user}</strong> is working.</p>`,
-      });
-      this.logger.log(`SMTP test email sent successfully to ${recipient}`);
-    } catch (err) {
-      this.logger.error(
-        `Failed to send SMTP test email to ${recipient} (from=${smtp.user} host=${smtp.host}:${smtp.port})`,
-        err instanceof Error ? err.stack : String(err),
-      );
-      throw err;
+
+    const sentTo: string[] = [];
+    const failures: string[] = [];
+
+    for (const address of recipients) {
+      try {
+        await this.mailerService.sendMail({
+          to: address,
+          subject: 'SMTP test — taxi booking API',
+          html: `<p>SMTP from <strong>${smtp.user}</strong> is working.</p>`,
+        });
+        sentTo.push(address);
+        this.logger.log(`SMTP test email sent successfully to ${address}`);
+      } catch (err) {
+        failures.push(address);
+        this.logger.error(
+          `Failed to send SMTP test email to ${address} (${this.smtpLogContext()})`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
     }
+
+    if (sentTo.length === 0) {
+      throw new Error(
+        `SMTP test failed for all recipients: ${recipients.join(', ')}`,
+      );
+    }
+
+    if (failures.length > 0) {
+      this.logger.warn(
+        `SMTP test partially failed: sent=${sentTo.join(',')} failed=${failures.join(',')}`,
+      );
+    }
+
+    return { sentTo };
   }
 }

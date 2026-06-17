@@ -85,11 +85,17 @@ export class MailController {
   @Post('test')
   @ApiOperation({
     summary: 'Send SMTP test email (staff admin)',
-    description: 'Verifies Hostinger SMTP credentials from server environment.',
+    description:
+      'Verifies Hostinger SMTP credentials. Sends to the given address and BOOKING_NOTIFY_EMAIL (e.g. info@barcelonataxi24.com).',
   })
   async sendTest(@Body() body: SendTestEmailDto) {
-    await this.mailService.sendTestEmail(body.email);
-    return { success: true, message: 'Test email sent.' };
+    const { sentTo } = await this.mailService.sendTestEmail(body.email);
+    return {
+      success: true,
+      message: 'Test email sent.',
+      sentTo,
+      bookingNotifyEmail: getBookingNotifyEmail(),
+    };
   }
 
   @ApiAccessTokenInSwagger()
