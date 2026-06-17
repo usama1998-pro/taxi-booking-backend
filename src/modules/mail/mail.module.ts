@@ -1,13 +1,17 @@
-import { DynamicModule, Module, forwardRef } from '@nestjs/common';
+import { DynamicModule, Logger, Module, forwardRef } from '@nestjs/common';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { BookingsModule } from '../bookings/bookings.module';
-import { getSmtpConfig } from './mail.config';
+import { getSmtpConfig, getSmtpPortWarning } from './mail.config';
 import { MailController } from './mail.controller';
 import { MailService } from './mail.service';
 
 @Module({})
 export class MailModule {
   static register(): DynamicModule {
+    const portWarning = getSmtpPortWarning();
+    if (portWarning) {
+      Logger.warn(portWarning, MailModule.name);
+    }
     const smtp = getSmtpConfig();
     const mailerImports = smtp
       ? [

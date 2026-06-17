@@ -29,6 +29,27 @@ function resolveSmtpHost(): string | null {
   return host;
 }
 
+function resolveSmtpPort(host: string): number {
+  const portRaw = process.env.SMTP_PORT?.trim();
+  let port = portRaw ? Number(portRaw) : 465;
+  if (!Number.isFinite(port)) {
+    return 465;
+  }
+  // Common typo on Hostinger: 456 instead of 465 (implicit SSL).
+  if (port === 456 && host.toLowerCase().includes('hostinger')) {
+    return 465;
+  }
+  return port;
+}
+
+export function getSmtpPortWarning(): string | null {
+  const portRaw = process.env.SMTP_PORT?.trim();
+  if (portRaw === '456') {
+    return 'SMTP_PORT=456 is invalid for Hostinger; use 465 (SSL) or 587 (STARTTLS).';
+  }
+  return null;
+}
+
 export function getSmtpConfig(): SmtpConfig | null {
   if (!isSmtpConfigured()) {
     return null;
@@ -37,15 +58,14 @@ export function getSmtpConfig(): SmtpConfig | null {
   if (!host) {
     return null;
   }
-  const portRaw = process.env.SMTP_PORT?.trim();
-  const port = portRaw ? Number(portRaw) : 465;
+  const port = resolveSmtpPort(host);
   const secure =
     process.env.SMTP_SECURE?.trim() !== '0' &&
     process.env.SMTP_SECURE?.trim()?.toLowerCase() !== 'false';
 
   return {
     host,
-    port: Number.isFinite(port) ? port : 465,
+    port,
     secure: port === 465 ? true : secure,
     user: process.env.SMTP_USER!.trim(),
     pass: process.env.SMTP_PASS!.trim(),

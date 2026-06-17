@@ -20,7 +20,7 @@ import { BookingsService } from '../bookings/bookings.service';
 import { ResendBookingEmailsDto } from './dto/resend-booking-emails.dto';
 import { SendBookingEmailDto } from './dto/send-booking-email.dto';
 import { SendTestEmailDto } from './dto/send-test-email.dto';
-import { getBookingNotifyEmail, getSmtpConfig, isSmtpConfigured } from './mail.config';
+import { getBookingNotifyEmail, getSmtpConfig, getSmtpPortWarning, isSmtpConfigured } from './mail.config';
 import { MailService } from './mail.service';
 
 @ApiTags('mail')
@@ -71,8 +71,11 @@ export class MailController {
       smtpConfigured: isSmtpConfigured(),
       mailerReady: this.mailService.isEnabled(),
       smtpHost: smtp?.host ?? null,
+      smtpPort: smtp?.port ?? null,
+      smtpSecure: smtp?.secure ?? null,
       fromEmail: smtp?.user ?? null,
       bookingNotifyEmail: getBookingNotifyEmail(),
+      configWarning: getSmtpPortWarning(),
     };
   }
 
