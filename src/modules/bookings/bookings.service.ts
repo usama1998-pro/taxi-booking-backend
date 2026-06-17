@@ -594,14 +594,16 @@ export class BookingsService {
 
     const publicBooking = this.toPublicBooking(persisted);
     const skipEmails = dto.bookingReference?.trim().startsWith('BR-') === true;
-    const notifications = { customerEmailSent: false, ownerEmailSent: false };
+    let notifications = { customerEmailSent: false, ownerEmailSent: false };
     if (!skipEmails) {
-      void this.mailService.sendBookingEmails(publicBooking).catch((err) => {
+      try {
+        notifications = await this.mailService.sendBookingEmails(publicBooking);
+      } catch (err) {
         this.logger.warn(
           `Booking ${publicBooking.uuid}: confirmation emails failed`,
           err instanceof Error ? err.stack : err,
         );
-      });
+      }
     }
 
     return {
