@@ -221,16 +221,30 @@ export class MailService {
   }
 
   async sendTestEmail(to: string): Promise<void> {
+    const recipient = to.trim().toLowerCase();
     if (!this.mailerService || !isSmtpConfigured()) {
+      this.logger.warn('SMTP not configured — cannot send test email');
       throw new Error(
         'SMTP is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS in .env',
       );
     }
     const smtp = getSmtpConfig()!;
-    await this.mailerService.sendMail({
-      to: to.trim().toLowerCase(),
-      subject: 'SMTP test — taxi booking API',
-      html: `<p>SMTP from <strong>${smtp.user}</strong> is working.</p>`,
-    });
+    this.logger.log(
+      `Sending SMTP test email: to=${recipient} from=${smtp.user} host=${smtp.host}:${smtp.port} secure=${smtp.secure}`,
+    );
+    try {
+      await this.mailerService.sendMail({
+        to: recipient,
+        subject: 'SMTP test — taxi booking API',
+        html: `<p>SMTP from <strong>${smtp.user}</strong> is working.</p>`,
+      });
+      this.logger.log(`SMTP test email sent successfully to ${recipient}`);
+    } catch (err) {
+      this.logger.error(
+        `Failed to send SMTP test email to ${recipient} (from=${smtp.user} host=${smtp.host}:${smtp.port})`,
+        err instanceof Error ? err.stack : String(err),
+      );
+      throw err;
+    }
   }
 }
