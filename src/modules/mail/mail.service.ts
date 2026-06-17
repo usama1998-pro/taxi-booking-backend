@@ -68,6 +68,18 @@ function formatChildSeatsSummary(booking: BookingPublic): string | null {
   return parts.length > 0 ? parts.join(', ') : null;
 }
 
+function isAppGuestBookingEmail(email: string | undefined): boolean {
+  const normalized = email?.trim().toLowerCase() ?? '';
+  return normalized.startsWith('guest.') && normalized.endsWith('@taxibarcelona24.guest');
+}
+
+function bookingCustomerEmail(booking: BookingPublic): string | undefined {
+  return (
+    booking.customerEmail?.trim().toLowerCase() ??
+    booking.user?.email?.trim().toLowerCase()
+  );
+}
+
 function buildDetailRow(label: string, value: string): string {
   return `<li><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</li>`;
 }
@@ -148,6 +160,12 @@ export class MailService {
 
   async sendBookingConfirmation(to: string, booking?: BookingPublic): Promise<boolean> {
     const recipient = to.trim().toLowerCase();
+    if (isAppGuestBookingEmail(recipient)) {
+      this.logger.log(
+        `Skipping booking confirmation for app guest email: to=${recipient}`,
+      );
+      return false;
+    }
     if (!this.mailerService || !isSmtpConfigured()) {
       this.logger.warn('SMTP not configured — skipping booking confirmation email');
       return false;
@@ -227,9 +245,14 @@ export class MailService {
   }
 
   async sendBookingEmails(booking: BookingPublic): Promise<BookingEmailResult> {
-    const customerEmail =
-      booking.customerEmail?.trim().toLowerCase() ??
-      booking.user?.email?.trim().toLowerCase();
+    const customerEmail = bookingCustomerEmail(booking);
+    if (isAppGuestBookingEmail(customerEmail)) {
+      this.logger.log(
+        `Skipping booking emails for app reservation: reference=${booking.bookingReference}`,
+      );
+      return { customerEmailSent: false, ownerEmailSent: false };
+    }
+
     const notifyTo = getBookingNotifyEmail();
 
     this.logger.log(

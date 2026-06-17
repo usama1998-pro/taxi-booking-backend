@@ -490,6 +490,14 @@ export class BookingsService {
     return note.startsWith('[Viator');
   }
 
+  /** App and Viator imports skip outbound booking emails (driver/Viator already has the details). */
+  private shouldSkipBookingEmails(dto: CreateBookingDto): boolean {
+    return (
+      this.isAppGuestBookingEmail(dto.customerEmail) ||
+      this.isViatorEmailImport(dto)
+    );
+  }
+
   private async resolveViatorBookingUserId(): Promise<string> {
     const configuredStaffEmail = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
     if (configuredStaffEmail) {
@@ -614,7 +622,7 @@ export class BookingsService {
     }
 
     const publicBooking = this.toPublicBooking(persisted);
-    const skipEmails = this.isViatorEmailImport(dto);
+    const skipEmails = this.shouldSkipBookingEmails(dto);
     let notifications = { customerEmailSent: false, ownerEmailSent: false };
     if (!skipEmails) {
       try {
