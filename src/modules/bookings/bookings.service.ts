@@ -124,7 +124,11 @@ export class BookingsService {
   private async resolveBookingDistanceKm(
     pickupLocation: Record<string, unknown>,
     dropoffLocation: Record<string, unknown>,
+    options?: { skip?: boolean },
   ): Promise<number | undefined> {
+    if (options?.skip) {
+      return undefined;
+    }
     const from = this.extractLocationLabel(pickupLocation);
     const to = this.extractLocationLabel(dropoffLocation);
     if (!from || !to) {
@@ -537,9 +541,11 @@ export class BookingsService {
     const infantCarrierCount = dto.infantCarrierCount ?? 0;
     const childSeatCount = dto.childSeatCount ?? 0;
     const boosterCount = dto.boosterCount ?? 0;
+    const skipDistanceLookup = this.isAppGuestBookingEmail(dto.customerEmail);
     const distanceKm = await this.resolveBookingDistanceKm(
       dto.pickupLocation,
       dto.dropoffLocation,
+      { skip: skipDistanceLookup },
     );
     const computedPrice = calculateBookingPrice({
       passengerCount: dto.passengerCount,
@@ -925,9 +931,13 @@ export class BookingsService {
         booking.pickupLocation) as Record<string, unknown>;
       const dropoffLocation = (d.dropoffLocation ??
         booking.dropoffLocation) as Record<string, unknown>;
+      const skipDistanceLookup = this.isAppGuestBookingEmail(
+        booking.customerEmail ?? booking.user?.email ?? undefined,
+      );
       const distanceKm = await this.resolveBookingDistanceKm(
         pickupLocation,
         dropoffLocation,
+        { skip: skipDistanceLookup },
       );
       data.price = calculateBookingPrice({
         passengerCount: nextPassengerCount,
