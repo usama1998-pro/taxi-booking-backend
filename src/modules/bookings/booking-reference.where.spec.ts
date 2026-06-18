@@ -58,35 +58,17 @@ describe('escapeMysqlLikePattern', () => {
 });
 
 describe('reservedBookingReferenceWhere', () => {
-  it('matches exact reference on active or trash rows', () => {
+  it('matches only the exact live reference', () => {
     expect(reservedBookingReferenceWhere('BR-123')).toEqual({
-      OR: [
-        { bookingReference: 'BR-123' },
-        {
-          bookingReference: {
-            gte: 'BR-123#trash-',
-            lt: 'BR-123#trash.',
-          },
-        },
-      ],
+      bookingReference: 'BR-123',
     });
   });
 
-  it('matches a trashed suffix row when looking up the live reference', () => {
+  it('does not match a trashed suffix row when looking up the live reference', () => {
     const uuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     const trashed = trashedBookingReference('BR-1399266959', uuid);
     const where = reservedBookingReferenceWhere('BR-1399266959');
-    expect(where.OR).toEqual(
-      expect.arrayContaining([
-        { bookingReference: 'BR-1399266959' },
-        {
-          bookingReference: {
-            gte: 'BR-1399266959#trash-',
-            lt: 'BR-1399266959#trash.',
-          },
-        },
-      ]),
-    );
+    expect(where).toEqual({ bookingReference: 'BR-1399266959' });
     expect(trashed.startsWith('BR-1399266959#trash-')).toBe(true);
   });
 });

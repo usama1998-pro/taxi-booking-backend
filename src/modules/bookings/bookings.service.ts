@@ -152,7 +152,7 @@ export class BookingsService {
     return [...refs];
   }
 
-  /** Active or trashed row for a reference (used by Viator idempotency). */
+  /** Active/live row for a reference (used by Viator idempotency). */
   async findReservedBookingByReference(
     bookingReference: string,
   ): Promise<{ uuid: string; deletedAt: Date | null } | null> {
@@ -168,7 +168,7 @@ export class BookingsService {
     return row ?? null;
   }
 
-  /** Active booking or trashed row with the same reference (blocks re-use until purge). */
+  /** Active/live booking with the same reference. */
   async isBookingReferenceReserved(
     bookingReference: string,
     excludeUuid?: string,
@@ -408,10 +408,7 @@ export class BookingsService {
     }
   }
 
-  /**
-   * Finds a booking by reference on active rows or trash (same table).
-   * Used for Viator idempotency — a trashed reference still counts as existing.
-   */
+  /** Finds an active/live booking by reference (trashed rows are ignored). */
   async findByBookingReference(
     bookingReference: string,
   ): Promise<BookingPublic | null> {

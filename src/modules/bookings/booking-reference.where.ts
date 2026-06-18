@@ -12,10 +12,6 @@ export function normalizeBookingReference(bookingReference: string): string {
   return trimmed.toUpperCase();
 }
 
-/**
- * Reference stored on a soft-deleted row so the live `BR-…` slot stays reserved
- * (see `reservedBookingReferenceWhere` prefix match).
- */
 /** Strip `#trash-{uuid}` for API display (storage keeps the suffix). */
 export function displayBookingReference(bookingReference: string): string {
   const trashIdx = bookingReference.toLowerCase().indexOf(TRASH_SUFFIX);
@@ -52,10 +48,6 @@ export function trashedBookingReferenceRange(liveReference: string): {
 }
 
 /**
- * Match a booking reference on active rows or trashed rows (same `Booking` table).
- * Legacy soft-deletes may have `BR-…#trash-{uuid}` — matched via string range, not `LIKE`.
- */
-/**
  * Partial booking-reference search needle (uppercase). Returns null when empty.
  */
 export function bookingReferenceSearchNeedle(rawQuery: string): string | null {
@@ -87,16 +79,7 @@ export function reservedBookingReferenceWhere(
   if (!ref) {
     return { id: '__none__' };
   }
-  const trashRange = trashedBookingReferenceRange(ref);
   return {
-    OR: [
-      { bookingReference: ref },
-      {
-        bookingReference: {
-          gte: trashRange.gte,
-          lt: trashRange.lt,
-        },
-      },
-    ],
+    bookingReference: ref,
   };
 }
