@@ -121,15 +121,6 @@ export class BookingsService {
   private readonly logger = new Logger(BookingsService.name);
   private trashPurgeRunning = false;
 
-  private async withDbConnection<T>(fn: () => Promise<T>): Promise<T> {
-    await this.prisma.acquireRequestConnection();
-    try {
-      return await fn();
-    } finally {
-      await this.prisma.releaseRequestConnection();
-    }
-  }
-
   private extractLocationLabel(location: Record<string, unknown>): string | null {
     const label = location.label;
     if (typeof label === 'string' && label.trim()) {
@@ -1201,7 +1192,7 @@ export class BookingsService {
 
   private async runPurgeTrashBatchInBackground(): Promise<void> {
     try {
-      await this.withDbConnection(() => this.purgeTrashBatch());
+      await this.purgeTrashBatch();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Trash purge batch failed: ${message}`);

@@ -20,6 +20,9 @@ services:
       - '${DATABASE_PORT:-3306}:3306'
     volumes:
       - mysql_data:/var/lib/mysql
+      # Hostinger-like limits: max_connections_per_hour=500 on user `taxi`
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/mysql/conf.d:/etc/mysql/conf.d:ro
     healthcheck:
       test:
         [
@@ -35,21 +38,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 40s
-
-  # api:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   restart: unless-stopped
-  #   env_file:
-  #     - .env
-  #   ports:
-  #     - "${PORT:-3000}:${PORT:-3000}"
-  #   depends_on:
-  #     mysql:
-  #       condition: service_healthy
-  #   networks:
-  #     - taxi-booking-network
 
 volumes:
   mysql_data:
