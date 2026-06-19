@@ -1,7 +1,10 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { PrismaClient } from '@prisma/client';
-import { getPrismaMariaDbAdapterConfig } from './database-url';
+import {
+  getPrismaMariaDbAdapterConfig,
+  shouldDisconnectDatabaseOnIdle,
+} from './database-url';
 
 @Injectable()
 export class PrismaService
@@ -11,6 +14,7 @@ export class PrismaService
   private activeRequestCount = 0;
   private connected = false;
   private lifecycleLock: Promise<void> = Promise.resolve();
+  private readonly disconnectOnIdle = shouldDisconnectDatabaseOnIdle();
 
   constructor() {
     const adapter = new PrismaMariaDb(getPrismaMariaDbAdapterConfig());
@@ -18,7 +22,9 @@ export class PrismaService
   }
 
   async onModuleInit(): Promise<void> {
-    // Connection lifecycle is managed per request by PrismaRequestLifecycleInterceptor.
+    if (!this.disconnectOnIdle) {
+      await this.ensureConnected();
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -39,9 +45,8 @@ export class PrismaService
   async acquireRequestConnection(): Promise<void> {
     await this.withLifecycleLock(async () => {
       this.activeRequestCount += 1;
-      if (this.activeRequestCount === 1 && !this.connected) {
-        await this.$connect();
-        this.connected = true;
+      if (!this.connected) {
+        await this.ensureConnected();
       }
     });
   }
@@ -52,11 +57,18 @@ export class PrismaService
         return;
       }
       this.activeRequestCount -= 1;
-      if (this.activeRequestCount === 0 && this.connected) {
+      if (this.disconnectOnIdle && this.activeRequestCount === 0 && this.connected) {
         await this.$disconnect();
         this.connected = false;
       }
     });
+  }
+
+  private async ensureConnected(): Promise<void> {
+    if (!this.connected) {
+      await this.$connect();
+      this.connected = true;
+    }
   }
 
   private async withLifecycleLock(task: () => Promise<void>): Promise<void> {

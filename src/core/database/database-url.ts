@@ -18,8 +18,10 @@ function normalizeToPrismaMysqlUrl(url: string): string {
 }
 
 /**
- * MariaDB connector pool size via URI (helps shared hosts with `max_connections_per_hour`).
- * Set `DATABASE_POOL_CONNECTION_LIMIT=2` (or `1`) on Hostinger-style plans if needed.
+ * MariaDB connector pool size via URI (concurrent connections in the pool).
+ * Set `DATABASE_POOL_CONNECTION_LIMIT=1` on Hostinger-style plans if needed.
+ * Note: this does NOT reduce `max_connections_per_hour` — use a persistent pool
+ * (default; see `DATABASE_DISCONNECT_ON_IDLE`) for that.
  */
 function applyPoolConnectionLimit(url: string): string {
   const limit = process.env.DATABASE_POOL_CONNECTION_LIMIT?.trim();
@@ -57,6 +59,16 @@ function isTruthyEnv(raw: string | undefined): boolean {
 function isFalsyEnv(raw: string | undefined): boolean {
   const v = raw?.trim().toLowerCase();
   return v === '0' || v === 'false' || v === 'no' || v === 'off';
+}
+
+/**
+ * When false (default), the API connects once at startup and keeps the pool open.
+ * Required on Hostinger-style hosts: disconnecting after every HTTP request counts each
+ * reconnect toward `max_connections_per_hour` (often 500).
+ * Set `DATABASE_DISCONNECT_ON_IDLE=1` only if you need the legacy per-request disconnect.
+ */
+export function shouldDisconnectDatabaseOnIdle(): boolean {
+  return isTruthyEnv(process.env.DATABASE_DISCONNECT_ON_IDLE);
 }
 
 /** TLS enabled but do not verify server certificate (shared hosts with non-public CA). */
