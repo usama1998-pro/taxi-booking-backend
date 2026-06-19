@@ -79,6 +79,16 @@ export class ViatorInboxService {
   private readonly logger = new Logger(ViatorInboxService.name);
   private inboxCheckRunning = false;
 
+  /** Acquire a pool connection only for Prisma work (not during IMAP). */
+  private async withDbConnection<T>(fn: () => Promise<T>): Promise<T> {
+    await this.prisma.acquireRequestConnection();
+    try {
+      return await fn();
+    } finally {
+      await this.prisma.releaseRequestConnection();
+    }
+  }
+
   private rowToDto(row: ViatorAlert): ViatorNotificationDto {
     const payload = (row.payload ?? {}) as ViatorBookingFields & {
       isTestBooking?: boolean;
@@ -401,8 +411,6 @@ export class ViatorInboxService {
   }
 
   private async runInboxCheckInBackground(): Promise<void> {
-    // Inbox check outlives the HTTP 202 response; hold a DB connection until import finishes.
-    await this.prisma.acquireRequestConnection();
     try {
       await this.runInboxCheckWork();
     } catch (err) {
@@ -411,7 +419,6 @@ export class ViatorInboxService {
       this.logger.warn(`Viator inbox check failed: ${message}`);
     } finally {
       this.inboxCheckRunning = false;
-      await this.prisma.releaseRequestConnection();
     }
   }
 
@@ -437,8 +444,9 @@ export class ViatorInboxService {
       }
     });
 
+    const unread = await this.withDbConnection(() => this.getUnreadCount());
     this.logger.log(
-      `Viator inbox check done (scanned=${result.scanned}, added=${result.added}, skippedDuplicate=${result.skippedDuplicate}, skippedProduct=${result.skippedProduct}, skippedSubject=${result.skippedSubject}, failedImport=${result.failedImport}, notifications=${result.notifications.length}, unread=${await this.getUnreadCount()}, elapsedMs=${Date.now() - startedAt})`,
+      `Viator inbox check done (scanned=${result.scanned}, added=${result.added}, skippedDuplicate=${result.skippedDuplicate}, skippedProduct=${result.skippedProduct}, skippedSubject=${result.skippedSubject}, failedImport=${result.failedImport}, notifications=${result.notifications.length}, unread=${unread}, elapsedMs=${Date.now() - startedAt})`,
     );
     return result;
   }
@@ -542,17 +550,25 @@ export class ViatorInboxService {
         }
       }
 
-      if (parsed.isTestBooking) {
-        if (await this.isDuplicateTestImapUid(uid)) {
-          skippedDuplicate += 1;
-          this.logger.log(
-            `Skip test email (already imported for IMAP uid=${uid})`,
-          );
-          continue;
+      const earlyDuplicate = await this.withDbConnection(async () => {
+        if (parsed.isTestBooking) {
+          return (await this.isDuplicateTestImapUid(uid)) ? 'test_uid' : null;
         }
-      } else if (await this.isDuplicateViatorReference(parsed.viatorReference)) {
+        if (await this.isDuplicateViatorReference(parsed.viatorReference)) {
+          await this.logDuplicateViatorSkip(parsed.viatorReference);
+          return 'reference';
+        }
+        return null;
+      });
+      if (earlyDuplicate === 'test_uid') {
         skippedDuplicate += 1;
-        await this.logDuplicateViatorSkip(parsed.viatorReference);
+        this.logger.log(
+          `Skip test email (already imported for IMAP uid=${uid})`,
+        );
+        continue;
+      }
+      if (earlyDuplicate === 'reference') {
+        skippedDuplicate += 1;
         continue;
       }
 
@@ -613,14 +629,6 @@ export class ViatorInboxService {
   > {
     const { parsed } = input;
 
-    if (input.isTestBooking) {
-      if (await this.isDuplicateTestImapUid(input.uid)) {
-        return 'duplicate';
-      }
-    } else if (await this.isDuplicateViatorReference(parsed.viatorReference)) {
-      return 'duplicate';
-    }
-
     const source = await this.fetchEmailSourceFromUid(client, input.uid);
     if (!source) {
       this.logger.warn(
@@ -642,9 +650,6 @@ export class ViatorInboxService {
       }
       viatorReference = fromBody;
       parsed.viatorReference = fromBody;
-      if (await this.isDuplicateViatorReference(viatorReference)) {
-        return 'duplicate';
-      }
     }
 
     const details = await parseViatorEmailBody(source);
@@ -654,9 +659,6 @@ export class ViatorInboxService {
       if (fromBody) {
         viatorReference = fromBody;
         parsed.viatorReference = fromBody;
-        if (await this.isDuplicateViatorReference(viatorReference)) {
-          return 'duplicate';
-        }
       }
     }
 
@@ -667,44 +669,54 @@ export class ViatorInboxService {
       return 'ignored_product';
     }
 
-    const persist = await this.persistViatorBooking({
-      viatorReference,
-      pickupDateLabel: parsed.pickupDateLabel,
-      details,
-      isTestBooking: input.isTestBooking,
-    });
-    if (persist.error) {
-      this.logger.warn(
-        `Viator import failed for ${viatorReference}: ${persist.error}`,
+    return this.withDbConnection(async () => {
+      if (input.isTestBooking) {
+        if (await this.isDuplicateTestImapUid(input.uid)) {
+          return 'duplicate' as const;
+        }
+      } else if (await this.isDuplicateViatorReference(viatorReference)) {
+        return 'duplicate' as const;
+      }
+
+      const persist = await this.persistViatorBooking({
+        viatorReference,
+        pickupDateLabel: parsed.pickupDateLabel,
+        details,
+        isTestBooking: input.isTestBooking,
+      });
+      if (persist.error) {
+        this.logger.warn(
+          `Viator import failed for ${viatorReference}: ${persist.error}`,
+        );
+        return null;
+      }
+      if (!persist.savedToDb && !persist.alreadyInDatabase) {
+        return null;
+      }
+      if (!persist.savedToDb && persist.alreadyInDatabase) {
+        return 'duplicate' as const;
+      }
+
+      const entry: PendingEntry = {
+        id: randomUUID(),
+        subject: input.subject,
+        viatorReference,
+        pickupDateLabel: parsed.pickupDateLabel,
+        receivedAt: input.receivedAt.toISOString(),
+        imapUid: input.uid,
+        isTestBooking: input.isTestBooking,
+        ...mergeBookingFields(details),
+      };
+
+      const dto = await this.createAlertForNewBooking(
+        entry,
+        persist.bookingUuid,
       );
-      return null;
-    }
-    if (!persist.savedToDb && !persist.alreadyInDatabase) {
-      return null;
-    }
-    if (!persist.savedToDb && persist.alreadyInDatabase) {
-      return 'duplicate';
-    }
+      if (!dto) {
+        return 'duplicate' as const;
+      }
 
-    const entry: PendingEntry = {
-      id: randomUUID(),
-      subject: input.subject,
-      viatorReference,
-      pickupDateLabel: parsed.pickupDateLabel,
-      receivedAt: input.receivedAt.toISOString(),
-      imapUid: input.uid,
-      isTestBooking: input.isTestBooking,
-      ...mergeBookingFields(details),
-    };
-
-    const dto = await this.createAlertForNewBooking(
-      entry,
-      persist.bookingUuid,
-    );
-    if (!dto) {
-      return 'duplicate';
-    }
-
-    return { dto };
+      return { dto };
+    });
   }
 }
