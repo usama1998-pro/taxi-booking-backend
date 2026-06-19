@@ -101,14 +101,14 @@ export class BookingsController {
 
   @Public()
   @Post('trash/purge')
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
-    summary: 'Purge trashed bookings (batch)',
+    summary: 'Purge trashed bookings (batch, background)',
     description:
-      'Hard-deletes up to 30 trashed bookings (oldest first). For cron/scheduler. Respects optional env BOOKING_TRASH_RETENTION_DAYS.',
+      'Returns immediately (HTTP 202) and hard-deletes up to 30 trashed bookings in the background (oldest first). For cron/scheduler. Respects optional env BOOKING_TRASH_RETENTION_DAYS. Overlapping calls return already_running.',
   })
   purgeTrashBatch() {
-    return this.bookingsService.purgeTrashBatch();
+    return this.bookingsService.enqueuePurgeTrashBatch();
   }
 
   @ApiAccessTokenInSwagger()

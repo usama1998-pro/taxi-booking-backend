@@ -96,6 +96,13 @@ export type ClearTrashResult = {
   remainingInTrash: number;
 };
 
+export type PurgeTrashEnqueueResponse = {
+  accepted: boolean;
+  status: 'started' | 'already_running';
+  batchSize: number;
+  message: string;
+};
+
 export type BookingCreateResult = BookingPublic & {
   assignmentMessage: string;
   notifications: {
@@ -112,6 +119,16 @@ export class BookingsService {
     private readonly routing: RoutingService,
   ) {}
   private readonly logger = new Logger(BookingsService.name);
+  private trashPurgeRunning = false;
+
+  private async withDbConnection<T>(fn: () => Promise<T>): Promise<T> {
+    await this.prisma.acquireRequestConnection();
+    try {
+      return await fn();
+    } finally {
+      await this.prisma.releaseRequestConnection();
+    }
+  }
 
   private extractLocationLabel(location: Record<string, unknown>): string | null {
     const label = location.label;
@@ -1152,6 +1169,45 @@ export class BookingsService {
       message: 'Booking moved to trash.',
       uuid,
     };
+  }
+
+  /**
+   * Starts a trash purge batch in the background and returns immediately so cron and
+   * other API requests are not blocked on a long delete transaction.
+   */
+  enqueuePurgeTrashBatch(): PurgeTrashEnqueueResponse {
+    if (this.trashPurgeRunning) {
+      return {
+        accepted: false,
+        status: 'already_running',
+        batchSize: BOOKING_TRASH_PURGE_BATCH_SIZE,
+        message:
+          'A trash purge is already running. Call again later if more batches are needed.',
+      };
+    }
+
+    this.trashPurgeRunning = true;
+    setImmediate(() => {
+      void this.runPurgeTrashBatchInBackground();
+    });
+
+    return {
+      accepted: true,
+      status: 'started',
+      batchSize: BOOKING_TRASH_PURGE_BATCH_SIZE,
+      message: `Trash purge started in the background (up to ${BOOKING_TRASH_PURGE_BATCH_SIZE} bookings per batch).`,
+    };
+  }
+
+  private async runPurgeTrashBatchInBackground(): Promise<void> {
+    try {
+      await this.withDbConnection(() => this.purgeTrashBatch());
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Trash purge batch failed: ${message}`);
+    } finally {
+      this.trashPurgeRunning = false;
+    }
   }
 
   /**
