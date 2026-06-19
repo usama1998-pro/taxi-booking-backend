@@ -7,8 +7,8 @@ import {
 } from './ensure-super-admin-from-env';
 
 /**
- * One-time DB bootstrap on API startup (uses the persistent Prisma pool).
- * Avoids extra connections during `npm run build` on Hostinger.
+ * One-time DB bootstrap on API startup.
+ * Acquires a connection explicitly (no HTTP interceptor on module init).
  */
 @Injectable()
 export class DatabaseBootstrapService implements OnModuleInit {
@@ -31,6 +31,7 @@ export class DatabaseBootstrapService implements OnModuleInit {
       return;
     }
 
+    await this.prisma.acquireRequestConnection();
     try {
       const result = await ensureSuperAdminFromEnv(this.prisma, bootstrap);
       switch (result.status) {
@@ -59,6 +60,8 @@ export class DatabaseBootstrapService implements OnModuleInit {
       this.logger.error(
         `Super admin bootstrap failed: ${formatEnsureSuperAdminError(err)}`,
       );
+    } finally {
+      await this.prisma.releaseRequestConnection();
     }
   }
 }
